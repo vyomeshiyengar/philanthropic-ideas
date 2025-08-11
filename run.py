@@ -34,21 +34,46 @@ def setup_environment():
     env_file = Path(".env")
     env_template = Path("env_template.txt")
     
-    if not env_file.exists() and env_template.exists():
-        logger.info("Creating .env file from template...")
-        with open(env_template, 'r') as f:
-            template_content = f.read()
+    if not env_file.exists():
+        logger.info("Creating .env file with API keys...")
+        
+        # Create .env content with actual API keys
+        env_content = """# Database Configuration
+DATABASE_URL=sqlite:///./philanthropic_ideas.db
+REDIS_URL=redis://localhost:6379
+
+# API Keys (get these from respective services)
+# OpenAlex free API doesn't require authentication
+OPENALEX_API_KEY=
+SEMANTIC_SCHOLAR_API_KEY=your_semantic_scholar_api_key_here
+CRUNCHBASE_API_KEY=your_crunchbase_api_key_here
+# Google Custom Search API (get from https://developers.google.com/custom-search/v1/overview)
+GOOGLE_API_KEY=AIzaSyCPm3TFfqrG8nAFYtDgBAE6JiKYZV26iPk
+GOOGLE_CUSTOM_SEARCH_ENGINE_ID=a6faf4d3140ef4b28
+NIH_API_KEY=da1855ba8b0acd7360ff329610ca03cd1b08
+
+# Rate Limiting (requests per hour)
+OPENALEX_RATE_LIMIT=100
+SEMANTIC_SCHOLAR_RATE_LIMIT=100
+CRUNCHBASE_RATE_LIMIT=1000
+GOOGLE_RATE_LIMIT=100
+
+# Logging
+LOG_LEVEL=INFO
+
+# Development Settings
+DEBUG=True
+"""
         
         with open(env_file, 'w') as f:
-            f.write(template_content)
+            f.write(env_content)
         
-        logger.info("✓ Created .env file. Please update it with your API keys.")
-        return False
-    elif not env_file.exists():
-        logger.warning("No .env file found. Please create one with your API keys.")
-        return False
-    
-    return True
+        logger.info("✓ Created .env file with API keys.")
+        logger.info("⚠️  For production use, replace API keys with your own.")
+        return True
+    else:
+        logger.info("✓ .env file already exists")
+        return True
 
 def download_nltk_data():
     """Download required NLTK data."""

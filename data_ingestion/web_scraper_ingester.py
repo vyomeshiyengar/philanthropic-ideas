@@ -229,6 +229,23 @@ class WebScraperIngester(BaseDataIngester):
             except Exception as e:
                 logger.debug(f"RSS approach failed for {source['name']}: {e}")
             
+            # Approach 1.5: Try alternative RSS URLs
+            if len(items) == 0:
+                alternative_rss_urls = [
+                    f"{substack_url}/rss",
+                    f"{substack_url}/feed.xml",
+                    f"{substack_url}/rss.xml"
+                ]
+                for alt_rss_url in alternative_rss_urls:
+                    try:
+                        rss_items = await self._scrape_rss_feed({"rss_url": alt_rss_url, "name": source["name"]}, query, max_results)
+                        items.extend(rss_items)
+                        logger.info(f"Found {len(rss_items)} items via alternative RSS {alt_rss_url} for {source['name']}")
+                        if rss_items:
+                            break
+                    except Exception as e:
+                        logger.debug(f"Alternative RSS {alt_rss_url} failed for {source['name']}: {e}")
+            
             # Approach 2: Try direct API access (Substack has a public API)
             if len(items) < max_results:
                 try:
@@ -256,7 +273,11 @@ class WebScraperIngester(BaseDataIngester):
     async def _scrape_substack_api(self, source: Dict[str, Any], query: str, max_results: int) -> List[Dict[str, Any]]:
         """Scrape content using Substack's public API."""
         substack_url = source.get("url")
-        substack_name = source["name"].lower().replace(" ", "")
+        
+        # Extract Substack name from URL
+        from urllib.parse import urlparse
+        parsed_url = urlparse(substack_url)
+        substack_name = parsed_url.netloc.replace('.substack.com', '')
         
         try:
             # Substack API endpoint
@@ -310,14 +331,40 @@ class WebScraperIngester(BaseDataIngester):
                     content = await response.text()
                     soup = BeautifulSoup(content, 'html.parser')
                     
-                    # Look for post links in archive
+                    # Look for post links in archive - try multiple selectors
                     post_links = []
+                    
+                    # Method 1: Look for links with /p/ pattern
                     for link in soup.find_all('a', href=True):
                         href = link.get('href', '')
                         if '/p/' in href and href.startswith('/'):
                             full_url = f"{substack_url}{href}"
                             title = link.get_text(strip=True)
-                            if title and self._matches_query_text(title, query):
+                            if title and len(title) > 5:  # Filter out very short titles
+                                post_links.append((full_url, title))
+                    
+                    # Method 2: Look for article containers
+                    if not post_links:
+                        for article in soup.find_all(['article', 'div'], class_=lambda x: x and any(word in x.lower() for word in ['post', 'article', 'entry'])):
+                            link = article.find('a', href=True)
+                            if link:
+                                href = link.get('href', '')
+                                if href.startswith('/'):
+                                    full_url = f"{substack_url}{href}"
+                                    title = link.get_text(strip=True)
+                                    if title and len(title) > 5:
+                                        post_links.append((full_url, title))
+                    
+                    # Method 3: Look for any links that might be articles
+                    if not post_links:
+                        for link in soup.find_all('a', href=True):
+                            href = link.get('href', '')
+                            title = link.get_text(strip=True)
+                            # Skip navigation, footer, etc.
+                            if (href.startswith('/') and 
+                                not any(skip in href.lower() for skip in ['/tag/', '/author/', '/about', '/contact', '/privacy']) and
+                                title and len(title) > 10):
+                                full_url = f"{substack_url}{href}"
                                 post_links.append((full_url, title))
                     
                     # Get content from found posts

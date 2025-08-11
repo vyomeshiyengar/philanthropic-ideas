@@ -145,11 +145,13 @@ pip install -r requirements.txt
    SEMANTIC_SCHOLAR_API_KEY=your_semantic_scholar_api_key_here
    CRUNCHBASE_API_KEY=your_crunchbase_api_key_here
    
-   # Google Custom Search API (optional - for talent identification)
-   GOOGLE_API_KEY=your_google_api_key_here
-   GOOGLE_CUSTOM_SEARCH_ENGINE_ID=your_custom_search_engine_id_here
+   # Google Custom Search API (for talent identification)
+   # Get from: https://developers.google.com/custom-search/v1/overview
+   GOOGLE_API_KEY=AIzaSyCPm3TFfqrG8nAFYtDgBAE6JiKYZV26iPk
+   GOOGLE_CUSTOM_SEARCH_ENGINE_ID=a6faf4d3140ef4b28
    
-   NIH_API_KEY=your_nih_api_key_here
+   # NIH RePORTER API (for research funding data)
+   NIH_API_KEY=da1855ba8b0acd7360ff329610ca03cd1b08
 
    # Rate Limiting (requests per hour)
    OPENALEX_RATE_LIMIT=100
@@ -163,6 +165,11 @@ pip install -r requirements.txt
    # Development Settings
    DEBUG=True
    ```
+
+   **⚠️ IMPORTANT:** The API keys shown above are for development purposes. For production use, you should:
+   - Generate your own API keys from the respective services
+   - Never commit the `.env` file to version control (it's already in `.gitignore`)
+   - Use environment-specific keys for different deployments
 
 ### Step 5: Initialize the System
 
