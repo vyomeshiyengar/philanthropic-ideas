@@ -1,0 +1,22 @@
+# Database Configuration
+DATABASE_URL=sqlite:///./philanthropic_ideas.db
+REDIS_URL=redis://localhost:6379
+
+# API Keys (get these from respective services)
+OPENALEX_API_KEY=your_openalex_api_key_here
+SEMANTIC_SCHOLAR_API_KEY=your_semantic_scholar_api_key_here
+CRUNCHBASE_API_KEY=your_crunchbase_api_key_here
+GOOGLE_API_KEY=your_google_api_key_here
+NIH_API_KEY=your_nih_api_key_here
+
+# Rate Limiting (requests per hour)
+OPENALEX_RATE_LIMIT=100
+SEMANTIC_SCHOLAR_RATE_LIMIT=100
+CRUNCHBASE_RATE_LIMIT=1000
+GOOGLE_RATE_LIMIT=100
+
+# Logging
+LOG_LEVEL=INFO
+
+# Development Settings
+DEBUG=True
