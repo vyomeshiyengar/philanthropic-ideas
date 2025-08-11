@@ -8,10 +8,12 @@ import asyncio
 
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from storage.database import get_db, init_database
+from storage.database import get_db, init_database, db_manager
 from storage.cache import api_cache
 from data_ingestion.main import DataIngestionOrchestrator
 from analysis.idea_extractor import IdeaExtractor
@@ -37,6 +39,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Mount static files
+try:
+    app.mount("/static", StaticFiles(directory="web_interface"), name="static")
+except Exception as e:
+    logger.warning(f"Could not mount static files: {e}")
 
 # Pydantic models for API requests/responses
 class IngestionRequest(BaseModel):
@@ -115,6 +123,16 @@ async def root():
         "version": "1.0.0",
         "status": "running"
     }
+
+@app.get("/web")
+async def web_interface():
+    """Serve the web interface."""
+    return FileResponse("web_interface/index.html")
+
+@app.get("/web_interface/index.html")
+async def web_interface_legacy():
+    """Serve the web interface (legacy path)."""
+    return FileResponse("web_interface/index.html")
 
 @app.get("/health")
 async def health_check():
@@ -488,17 +506,16 @@ async def _run_prototype_pipeline_background():
         logger.error(f"Prototype pipeline failed: {e}")
 
 @app.get("/prototype/status")
-async def get_prototype_status():
+async def get_prototype_status(db: Session = Depends(get_db)):
     """Get the current status of prototype data and ideas."""
     try:
-        db = next(get_db())
         from storage.models import RawData, ExtractedIdea, IdeaEvaluation, DataSource
         
         # Get data source statistics
-        sources = db.query(DataSource).filter(DataSource.enabled == True).all()
+        sources = db.query(DataSource).filter(DataSource.status == "active").all()
         source_stats = {}
         for source in sources:
-            count = db.query(RawData).filter(RawData.source_id == source.id).count()
+            count = db.query(RawData).filter(RawData.data_source_id == source.id).count()
             source_stats[source.name] = count
         
         # Get idea statistics
@@ -525,21 +542,21 @@ async def get_prototype_raw_data(limit: int = 50, db: Session = Depends(get_db))
     try:
         from storage.models import RawData, DataSource
         
-        # Get enabled sources
-        enabled_sources = db.query(DataSource).filter(DataSource.enabled == True).all()
-        source_ids = [source.id for source in enabled_sources]
+        # Get active sources
+        active_sources = db.query(DataSource).filter(DataSource.status == "active").all()
+        source_ids = [source.id for source in active_sources]
         
-        # Get raw data from enabled sources
+        # Get raw data from active sources
         raw_data = db.query(RawData).filter(
-            RawData.source_id.in_(source_ids)
+            RawData.data_source_id.in_(source_ids)
         ).order_by(RawData.created_at.desc()).limit(limit).all()
         
         return [
             {
                 "id": data.id,
-                "source_name": data.source.name,
+                "source_name": data.data_source.name,
                 "title": data.title,
-                "content": data.content[:500] + "..." if len(data.content) > 500 else data.content,
+                "content": data.full_text[:500] + "..." if data.full_text and len(data.full_text) > 500 else (data.full_text or ""),
                 "url": data.url,
                 "created_at": data.created_at.isoformat(),
                 "metadata": data.metadata_json

@@ -33,8 +33,7 @@ class OpenAlexIngester(BaseDataIngester):
             search_url = f"{self.base_url}{self.search_endpoint}"
             params = {
                 "search": query,
-                "per_page": min(max_results, 200),  # OpenAlex max is 200
-                "select": "id,title,abstract,publication_date,authorships,concepts,keywords,doi,url"
+                "per_page": min(max_results, 200)  # OpenAlex max is 200
             }
             
             logger.info(f"Searching OpenAlex for: {query}")
@@ -198,8 +197,7 @@ class OpenAlexIngester(BaseDataIngester):
         search_url = f"{self.base_url}/works"
         params = {
             "filter": f"concepts.display_name.search:{quote_plus(concept)}",
-            "per_page": min(max_results, 200),
-            "select": "id,title,abstract,publication_date,authorships,concepts,keywords,doi,url"
+            "per_page": min(max_results, 200)
         }
         
         try:
@@ -258,8 +256,7 @@ class OpenAlexIngester(BaseDataIngester):
         params = {
             "filter": f"publication_date:{start_date.strftime('%Y-%m-%d')}..{end_date.strftime('%Y-%m-%d')}",
             "per_page": min(max_results, 200),
-            "sort": "publication_date:desc",
-            "select": "id,title,abstract,publication_date,authorships,concepts,keywords,doi,url"
+            "sort": "publication_date:desc"
         }
         
         try:

@@ -123,34 +123,61 @@ class TalentIdentifier:
     
     async def _search_web(self, idea_title: str, expertise_areas: List[str], 
                          max_results: int) -> List[Dict[str, Any]]:
-        """Search the web for potential talent."""
+        """Search web for potential talent using Google Custom Search API."""
         candidates = []
         
-        if not self.google_api_key:
+        if not settings.GOOGLE_API_KEY:
             logger.warning("Google API key not available")
             return candidates
         
+        if not settings.GOOGLE_CUSTOM_SEARCH_ENGINE_ID:
+            logger.warning("Google Custom Search Engine ID not available")
+            return candidates
+        
         try:
+            import aiohttp
+            
+            # Google Custom Search API endpoint
+            base_url = "https://www.googleapis.com/customsearch/v1"
+            
             # Search for people working in relevant areas
             for expertise in expertise_areas[:3]:
-                search_query = f'"{expertise}" "{idea_title.split()[0]}" expert researcher'
+                search_query = f'"{expertise}" "{idea_title.split()[0]}" expert researcher professor'
                 
-                # This is a simplified version - in practice you'd use the Google Custom Search API
-                # For now, we'll create mock candidates
-                mock_candidate = {
-                    "name": f"Prof. {expertise.title()} Specialist",
-                    "title": f"Professor of {expertise.title()}",
-                    "organization": f"{expertise.title()} University",
-                    "location": "Cambridge, MA",
-                    "expertise_areas": [expertise],
-                    "experience_years": 20,
-                    "education": ["PhD in " + expertise.title()],
-                    "source": "web_search",
-                    "source_url": f"https://scholar.google.com/citations?user={expertise.lower()}",
-                    "confidence_score": 0.7
+                params = {
+                    "key": settings.GOOGLE_API_KEY,
+                    "cx": settings.GOOGLE_CUSTOM_SEARCH_ENGINE_ID,
+                    "q": search_query,
+                    "num": min(10, max_results),  # Google CSE allows max 10 results per query
+                    "searchType": "web",
+                    "fields": "items(title,snippet,link)"
                 }
                 
-                candidates.append(mock_candidate)
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(base_url, params=params) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            
+                            if "items" in data:
+                                for item in data["items"]:
+                                    # Extract information from search result
+                                    title = item.get("title", "")
+                                    snippet = item.get("snippet", "")
+                                    link = item.get("link", "")
+                                    
+                                    # Parse the result to extract candidate information
+                                    candidate = self._parse_search_result(title, snippet, link, expertise)
+                                    
+                                    if candidate:
+                                        candidates.append(candidate)
+                                        
+                                        if len(candidates) >= max_results:
+                                            break
+                        else:
+                            logger.warning(f"Google Custom Search API returned status {response.status}")
+                
+                # Add delay to respect rate limits
+                await asyncio.sleep(1)
                 
                 if len(candidates) >= max_results:
                     break
@@ -159,6 +186,194 @@ class TalentIdentifier:
             logger.error(f"Web search failed: {e}")
         
         return candidates
+    
+    def _parse_search_result(self, title: str, snippet: str, link: str, expertise: str) -> Optional[Dict[str, Any]]:
+        """Parse a Google search result to extract candidate information."""
+        try:
+            # Extract name from title or snippet
+            name = self._extract_name_from_text(title, snippet)
+            if not name:
+                return None
+            
+            # Extract organization
+            organization = self._extract_organization_from_text(title, snippet, link)
+            
+            # Extract title/position
+            position = self._extract_position_from_text(title, snippet)
+            
+            # Extract location
+            location = self._extract_location_from_text(title, snippet)
+            
+            # Estimate experience years based on context
+            experience_years = self._estimate_experience_years(title, snippet)
+            
+            # Extract education
+            education = self._extract_education_from_text(title, snippet)
+            
+            # Calculate confidence score based on information quality
+            confidence_score = self._calculate_confidence_score(title, snippet, link)
+            
+            return {
+                "name": name,
+                "title": position,
+                "organization": organization,
+                "location": location,
+                "expertise_areas": [expertise],
+                "experience_years": experience_years,
+                "education": education,
+                "source": "google_custom_search",
+                "source_url": link,
+                "confidence_score": confidence_score
+            }
+            
+        except Exception as e:
+            logger.debug(f"Failed to parse search result: {e}")
+            return None
+    
+    def _extract_name_from_text(self, title: str, snippet: str) -> Optional[str]:
+        """Extract person name from title or snippet."""
+        import re
+        
+        # Common patterns for academic/professional names
+        patterns = [
+            r"Dr\.\s+([A-Z][a-z]+ [A-Z][a-z]+)",
+            r"Professor\s+([A-Z][a-z]+ [A-Z][a-z]+)",
+            r"Prof\.\s+([A-Z][a-z]+ [A-Z][a-z]+)",
+            r"([A-Z][a-z]+ [A-Z][a-z]+)\s+\(PhD\)",
+            r"([A-Z][a-z]+ [A-Z][a-z]+)\s+at\s+",
+            r"([A-Z][a-z]+ [A-Z][a-z]+)\s+from\s+"
+        ]
+        
+        text = f"{title} {snippet}"
+        
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if match:
+                return match.group(1)
+        
+        # Fallback: look for capitalized words that might be names
+        words = text.split()
+        for i, word in enumerate(words):
+            if (word[0].isupper() and len(word) > 2 and 
+                i + 1 < len(words) and words[i + 1][0].isupper() and len(words[i + 1]) > 2):
+                return f"{word} {words[i + 1]}"
+        
+        return None
+    
+    def _extract_organization_from_text(self, title: str, snippet: str, link: str) -> str:
+        """Extract organization from text."""
+        import re
+        
+        # Common university/organization patterns
+        patterns = [
+            r"at\s+([A-Z][a-zA-Z\s&]+(?:University|Institute|College|Foundation|Center))",
+            r"from\s+([A-Z][a-zA-Z\s&]+(?:University|Institute|College|Foundation|Center))",
+            r"([A-Z][a-zA-Z\s&]+(?:University|Institute|College|Foundation|Center))"
+        ]
+        
+        text = f"{title} {snippet}"
+        
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if match:
+                return match.group(1).strip()
+        
+        # Try to extract from URL
+        if "edu" in link:
+            domain = link.split("//")[1].split("/")[0]
+            return domain.replace("www.", "").replace(".edu", " University")
+        
+        return "Unknown Organization"
+    
+    def _extract_position_from_text(self, title: str, snippet: str) -> str:
+        """Extract position/title from text."""
+        positions = [
+            "Professor", "Associate Professor", "Assistant Professor", "Lecturer",
+            "Researcher", "Research Scientist", "Principal Investigator",
+            "Director", "Manager", "Consultant", "Expert"
+        ]
+        
+        text = f"{title} {snippet}".lower()
+        
+        for position in positions:
+            if position.lower() in text:
+                return position
+        
+        return "Researcher"
+    
+    def _extract_location_from_text(self, title: str, snippet: str) -> str:
+        """Extract location from text."""
+        import re
+        
+        # Common location patterns
+        patterns = [
+            r"([A-Z][a-z]+,\s*[A-Z]{2})",  # City, State
+            r"([A-Z][a-z]+,\s*[A-Z][a-z]+)",  # City, Country
+            r"([A-Z][a-z]+ University)"  # University name often indicates location
+        ]
+        
+        text = f"{title} {snippet}"
+        
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if match:
+                return match.group(1)
+        
+        return "Unknown Location"
+    
+    def _estimate_experience_years(self, title: str, snippet: str) -> int:
+        """Estimate experience years based on context."""
+        text = f"{title} {snippet}".lower()
+        
+        # Look for experience indicators
+        if "senior" in text or "principal" in text or "full professor" in text:
+            return 15
+        elif "associate professor" in text:
+            return 10
+        elif "assistant professor" in text or "postdoc" in text:
+            return 5
+        elif "phd" in text or "doctorate" in text:
+            return 8
+        elif "masters" in text or "ms" in text:
+            return 3
+        else:
+            return 5  # Default estimate
+    
+    def _extract_education_from_text(self, title: str, snippet: str) -> List[str]:
+        """Extract education information from text."""
+        education = []
+        text = f"{title} {snippet}".lower()
+        
+        if "phd" in text or "doctorate" in text:
+            education.append("PhD")
+        if "masters" in text or "ms" in text or "ma" in text:
+            education.append("Masters")
+        if "bachelors" in text or "ba" in text or "bs" in text:
+            education.append("Bachelors")
+        
+        return education if education else ["Unknown"]
+    
+    def _calculate_confidence_score(self, title: str, snippet: str, link: str) -> float:
+        """Calculate confidence score based on information quality."""
+        score = 0.5  # Base score
+        
+        # Higher score for academic domains
+        if any(domain in link for domain in [".edu", "scholar.google.com", "researchgate.net"]):
+            score += 0.2
+        
+        # Higher score for longer, more detailed snippets
+        if len(snippet) > 100:
+            score += 0.1
+        
+        # Higher score for professional titles
+        if any(title_word in title.lower() for title_word in ["professor", "dr.", "researcher"]):
+            score += 0.1
+        
+        # Higher score for organization mentions
+        if any(org_word in snippet.lower() for org_word in ["university", "institute", "foundation"]):
+            score += 0.1
+        
+        return min(score, 1.0)
     
     def _calculate_fit_score(self, candidate: Dict[str, Any], idea: ExtractedIdea) -> float:
         """Calculate how well a candidate fits the idea."""

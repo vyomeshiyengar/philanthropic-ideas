@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     SEMANTIC_SCHOLAR_API_KEY: Optional[str] = None
     CRUNCHBASE_API_KEY: Optional[str] = None
     GOOGLE_API_KEY: Optional[str] = None
+    GOOGLE_CUSTOM_SEARCH_ENGINE_ID: Optional[str] = None
     NIH_API_KEY: Optional[str] = None
     
     # Rate limiting
@@ -31,7 +32,8 @@ class Settings(BaseSettings):
         "openalex": {
             "base_url": "https://api.openalex.org",
             "search_endpoint": "/works",
-            "enabled": True
+            "enabled": True,
+            "requires_auth": False  # OpenAlex doesn't require authentication
         },
         "pubmed": {
             "base_url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils",
@@ -53,7 +55,8 @@ class Settings(BaseSettings):
         "nih_reporter": {
             "base_url": "https://api.reporter.nih.gov",
             "search_endpoint": "/v2/projects/search",
-            "enabled": True
+            "enabled": True,
+            "requires_auth": False  # NIH RePORTER doesn't require authentication
         },
         "cordis": {
             "base_url": "https://cordis.europa.eu",

@@ -69,6 +69,7 @@ philanthropic-ideas/
 2. **Set up environment:**
    - Copy `env_template.txt` to `.env`
    - Add your API keys to the `.env` file
+   - For talent identification, set up Google Custom Search API (see `GOOGLE_SEARCH_SETUP.md`)
 
 3. **Initialize and start the system:**
    ```bash

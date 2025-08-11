@@ -3,10 +3,13 @@ DATABASE_URL=sqlite:///./philanthropic_ideas.db
 REDIS_URL=redis://localhost:6379
 
 # API Keys (get these from respective services)
-OPENALEX_API_KEY=your_openalex_api_key_here
+# OpenAlex free API doesn't require authentication
+OPENALEX_API_KEY=
 SEMANTIC_SCHOLAR_API_KEY=your_semantic_scholar_api_key_here
 CRUNCHBASE_API_KEY=your_crunchbase_api_key_here
-GOOGLE_API_KEY=your_google_api_key_here
+# Google Custom Search API (get from https://developers.google.com/custom-search/v1/overview)
+GOOGLE_API_KEY=AIzaSyCPm3TFfqrG8nAFYtDgBAE6JiKYZV26iPk
+GOOGLE_CUSTOM_SEARCH_ENGINE_ID=a6faf4d3140ef4b28
 NIH_API_KEY=da1855ba8b0acd7360ff329610ca03cd1b08
 
 # Rate Limiting (requests per hour)

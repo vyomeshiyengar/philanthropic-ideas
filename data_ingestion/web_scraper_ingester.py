@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 import re
 from dataclasses import dataclass
 
-from data_ingestion.base_ingester import WebScraperIngester, IngestionResult
+from data_ingestion.base_ingester import BaseDataIngester, IngestionResult
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -25,7 +25,11 @@ class RSSFeedItem:
 
 class WebScraperIngester(BaseDataIngester):
     def __init__(self):
-        super().__init__("web_scraper", {"base_url": "https://example.com", "enabled": True})
+        super().__init__("web_scraper", {
+            "base_url": "https://example.com", 
+            "enabled": True,
+            "requires_auth": False  # Web scraping doesn't require authentication
+        })
         self.session = None
         self.expert_sources = settings.EXPERT_SOURCES
         
@@ -72,15 +76,16 @@ class WebScraperIngester(BaseDataIngester):
         
     async def _scrape_source(self, source: Dict[str, Any], query: str, max_results: int) -> List[Dict[str, Any]]:
         """Scrape content from a specific source."""
-        source_type = source.get("type", "rss")
+        source_type = source.get("type", "blog")  # Default to blog instead of rss
         
-        if source_type == "rss":
-            return await self._scrape_rss_feed(source, query, max_results)
-        elif source_type == "blog":
+        # Map all source types to blog scraping for now
+        if source_type in ["blog", "substack", "organization", "forum", "magazine", "publisher"]:
             return await self._scrape_blog(source, query, max_results)
+        elif source_type == "rss":
+            return await self._scrape_rss_feed(source, query, max_results)
         else:
-            logger.warning(f"Unknown source type: {source_type}")
-            return []
+            logger.warning(f"Unknown source type: {source_type}, treating as blog")
+            return await self._scrape_blog(source, query, max_results)
             
     async def _scrape_rss_feed(self, source: Dict[str, Any], query: str, max_results: int) -> List[Dict[str, Any]]:
         """Scrape content from RSS feeds."""
@@ -141,10 +146,11 @@ class WebScraperIngester(BaseDataIngester):
             return []
             
         try:
-            # Get the main page
-            async with self.session.get(blog_url) as response:
+            # Get the main page with timeout
+            timeout = aiohttp.ClientTimeout(total=15, connect=5)
+            async with self.session.get(blog_url, timeout=timeout) as response:
                 if response.status != 200:
-                    logger.error(f"Failed to fetch blog {blog_url}: {response.status}")
+                    logger.debug(f"Failed to fetch blog {blog_url}: {response.status}")
                     return []
                     
                 content = await response.text()
@@ -153,9 +159,16 @@ class WebScraperIngester(BaseDataIngester):
                 # Extract article links (this is a generic approach)
                 article_links = self._extract_article_links(soup, blog_url)
                 
+                # Limit the number of articles to process
+                article_links = article_links[:min(max_results, 5)]  # Limit to 5 articles per source
+                
                 items = []
-                for link in article_links[:max_results]:
+                for i, link in enumerate(article_links):
                     try:
+                        # Add delay between requests to be respectful
+                        if i > 0:
+                            await asyncio.sleep(2)
+                            
                         article_content = await self._scrape_article_content(link)
                         if article_content and self._matches_query_text(article_content, query):
                             items.append({
@@ -170,21 +183,33 @@ class WebScraperIngester(BaseDataIngester):
                                 "scraped_at": datetime.utcnow().isoformat(),
                                 "content_type": "article"
                             })
+                    except asyncio.CancelledError:
+                        logger.debug(f"Cancelled processing articles from {blog_url}")
+                        break
                     except Exception as e:
-                        logger.error(f"Error scraping article {link}: {e}")
+                        logger.debug(f"Error scraping article {link}: {e}")
                         continue
                         
                 return items
                 
+        except asyncio.TimeoutError:
+            logger.debug(f"Timeout accessing blog {blog_url}")
+            return []
+        except asyncio.CancelledError:
+            logger.debug(f"Cancelled scraping blog {blog_url}")
+            return []
         except Exception as e:
-            logger.error(f"Error scraping blog {blog_url}: {e}")
+            logger.debug(f"Error scraping blog {blog_url}: {e}")
             return []
             
     async def _scrape_article_content(self, url: str) -> Optional[str]:
         """Scrape the full content of an article."""
         try:
-            async with self.session.get(url) as response:
+            # Add timeout and better error handling
+            timeout = aiohttp.ClientTimeout(total=10, connect=5)
+            async with self.session.get(url, timeout=timeout) as response:
                 if response.status != 200:
+                    logger.debug(f"Failed to scrape {url}: status {response.status}")
                     return None
                     
                 content = await response.text()
@@ -220,12 +245,18 @@ class WebScraperIngester(BaseDataIngester):
                     text = content_element.get_text()
                     # Clean up whitespace
                     text = re.sub(r'\s+', ' ', text).strip()
-                    return text
+                    return text if len(text) > 100 else None  # Only return if substantial content
                     
                 return None
                 
+        except asyncio.TimeoutError:
+            logger.debug(f"Timeout scraping {url}")
+            return None
+        except asyncio.CancelledError:
+            logger.debug(f"Cancelled scraping {url}")
+            return None
         except Exception as e:
-            logger.error(f"Error scraping article content from {url}: {e}")
+            logger.debug(f"Error scraping article content from {url}: {e}")
             return None
             
     def _matches_query(self, entry: Any, query: str) -> bool:

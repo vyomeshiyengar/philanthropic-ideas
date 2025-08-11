@@ -88,16 +88,16 @@ class BaseDataIngester(ABC):
             "Content-Type": "application/json"
         }
         
-        # Add API key if available
+        # Add API key if available and required
         api_key = self.source_config.get("api_key")
-        if api_key:
+        if api_key and self.source_config.get("requires_auth", True):
             headers["Authorization"] = f"Bearer {api_key}"
         
         return headers
     
     @sleep_and_retry
     @limits(calls=100, period=3600)  # 100 calls per hour default
-    async def _make_request(self, url: str, params: Optional[Dict] = None) -> Optional[Dict]:
+    async def _make_request(self, url: str, params: Optional[Dict] = None, method: str = "GET", headers: Optional[Dict] = None) -> Optional[Dict]:
         """Make a rate-limited API request with caching."""
         # Check cache first
         cached_response = api_cache.get(self.source_name, url, params)
@@ -108,25 +108,38 @@ class BaseDataIngester(ABC):
         
         # Make actual API request
         try:
-            async with self.session.get(url, params=params) as response:
-                if response.status == 200:
-                    data = await response.json()
+            request_headers = self._get_headers()
+            if headers:
+                request_headers.update(headers)
+            
+            if method.upper() == "POST":
+                async with self.session.post(url, json=params, headers=request_headers) as response:
+                    return await self._handle_response(response, url, params)
+            else:
+                async with self.session.get(url, params=params, headers=request_headers) as response:
+                    return await self._handle_response(response, url, params)
                     
-                    # Cache the response
-                    api_cache.set(self.source_name, url, {"data": data}, params)
-                    logger.debug(f"Cached response for {self.source_name}:{url}")
-                    
-                    return data
-                elif response.status == 429:  # Rate limited
-                    retry_after = int(response.headers.get("Retry-After", 60))
-                    logger.warning(f"Rate limited, waiting {retry_after} seconds")
-                    await asyncio.sleep(retry_after)
-                    return await self._make_request(url, params)
-                else:
-                    logger.error(f"API request failed: {response.status} - {response.reason}")
-                    return None
         except Exception as e:
             logger.error(f"Request error: {e}")
+            return None
+    
+    async def _handle_response(self, response, url: str, params: Optional[Dict] = None) -> Optional[Dict]:
+        """Handle API response."""
+        if response.status == 200:
+            data = await response.json()
+            
+            # Cache the response
+            api_cache.set(self.source_name, url, {"data": data}, params)
+            logger.debug(f"Cached response for {self.source_name}:{url}")
+            
+            return data
+        elif response.status == 429:  # Rate limited
+            retry_after = int(response.headers.get("Retry-After", 60))
+            logger.warning(f"Rate limited, waiting {retry_after} seconds")
+            await asyncio.sleep(retry_after)
+            return await self._make_request(url, params)
+        else:
+            logger.error(f"API request failed: {response.status} - {response.reason}")
             return None
     
     def _log_search_query(self, query: str, domain: Optional[str] = None, 

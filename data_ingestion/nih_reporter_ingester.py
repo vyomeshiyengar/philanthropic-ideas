@@ -98,7 +98,7 @@ class NIHReporterIngester(BaseDataIngester):
                     }
                     
                     # Save to database
-                    await self._save_raw_data(
+                    self._save_raw_data(
                         content_type="nih_project",
                         title=project_title,
                         full_text=content,
@@ -191,7 +191,7 @@ class NIHReporterIngester(BaseDataIngester):
                         "data_type": "nih_project_by_investigator"
                     }
                     
-                    await self._save_raw_data(
+                    self._save_raw_data(
                         content_type="nih_project_by_investigator",
                         title=project_title,
                         full_text=content,
@@ -281,7 +281,7 @@ class NIHReporterIngester(BaseDataIngester):
                         "data_type": "nih_project_by_organization"
                     }
                     
-                    await self._save_raw_data(
+                    self._save_raw_data(
                         content_type="nih_project_by_organization",
                         title=project_title,
                         full_text=content,
@@ -376,7 +376,7 @@ class NIHReporterIngester(BaseDataIngester):
                         "data_type": "nih_project_by_funding"
                     }
                     
-                    await self._save_raw_data(
+                    self._save_raw_data(
                         content_type="nih_project_by_funding",
                         title=project_title,
                         full_text=content,
@@ -469,7 +469,7 @@ class NIHReporterIngester(BaseDataIngester):
                         "data_type": "nih_recent_project"
                     }
                     
-                    await self._save_raw_data(
+                    self._save_raw_data(
                         content_type="nih_recent_project",
                         title=project_title,
                         full_text=content,
