@@ -438,6 +438,146 @@ async def run_full_pipeline(background_tasks: BackgroundTasks):
         logger.error(f"Failed to start full pipeline: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# Prototype-specific endpoints
+@app.post("/prototype/run")
+async def run_prototype_pipeline(background_tasks: BackgroundTasks):
+    """Run the prototype pipeline: OpenAlex + NIH RePORTER + Web Scraper -> extraction -> evaluation -> talent identification."""
+    try:
+        # Run prototype pipeline in background
+        background_tasks.add_task(_run_prototype_pipeline_background)
+        
+        return {
+            "message": "Prototype pipeline started in background",
+            "steps": ["prototype_ingestion", "extraction", "evaluation", "talent_identification"],
+            "sources": ["openalex", "nih_reporter", "web_scraper"]
+        }
+    except Exception as e:
+        logger.error(f"Failed to start prototype pipeline: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+async def _run_prototype_pipeline_background():
+    """Background task for prototype pipeline."""
+    try:
+        logger.info("Starting prototype pipeline...")
+        
+        # Step 1: Prototype data ingestion (only enabled sources)
+        logger.info("Step 1: Running prototype data ingestion...")
+        ingestion_results = await ingestion_orchestrator.run_full_ingestion()
+        logger.info(f"Prototype ingestion completed: {ingestion_results['summary']['total_successful']} items")
+        
+        # Step 2: Idea extraction
+        logger.info("Step 2: Running idea extraction...")
+        ideas = idea_extractor.extract_ideas_from_raw_data()
+        saved_count = idea_extractor.save_extracted_ideas(ideas)
+        logger.info(f"Extraction completed: {saved_count} ideas saved")
+        
+        # Step 3: Idea evaluation
+        logger.info("Step 3: Running idea evaluation...")
+        evaluation_results = idea_evaluator.evaluate_all_ideas()
+        logger.info(f"Evaluation completed: {evaluation_results['evaluated']} ideas evaluated")
+        
+        # Step 4: Talent identification
+        logger.info("Step 4: Running talent identification...")
+        top_ideas = idea_evaluator.get_top_ideas(limit=5)
+        talent_results = await talent_identifier.identify_talent_for_top_ideas(top_ideas)
+        logger.info(f"Talent identification completed: {talent_results['total_candidates']} candidates")
+        
+        logger.info("Prototype pipeline completed successfully!")
+        
+    except Exception as e:
+        logger.error(f"Prototype pipeline failed: {e}")
+
+@app.get("/prototype/status")
+async def get_prototype_status():
+    """Get the current status of prototype data and ideas."""
+    try:
+        db = next(get_db())
+        from storage.models import RawData, ExtractedIdea, IdeaEvaluation, DataSource
+        
+        # Get data source statistics
+        sources = db.query(DataSource).filter(DataSource.enabled == True).all()
+        source_stats = {}
+        for source in sources:
+            count = db.query(RawData).filter(RawData.source_id == source.id).count()
+            source_stats[source.name] = count
+        
+        # Get idea statistics
+        total_ideas = db.query(ExtractedIdea).count()
+        evaluated_ideas = db.query(IdeaEvaluation).count()
+        
+        # Get top ideas
+        top_ideas = idea_evaluator.get_top_ideas(limit=5) if evaluated_ideas > 0 else []
+        
+        return {
+            "data_sources": source_stats,
+            "total_raw_data": sum(source_stats.values()),
+            "total_ideas": total_ideas,
+            "evaluated_ideas": evaluated_ideas,
+            "top_ideas": top_ideas
+        }
+    except Exception as e:
+        logger.error(f"Failed to get prototype status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/prototype/raw-data")
+async def get_prototype_raw_data(limit: int = 50, db: Session = Depends(get_db)):
+    """Get raw data from prototype sources."""
+    try:
+        from storage.models import RawData, DataSource
+        
+        # Get enabled sources
+        enabled_sources = db.query(DataSource).filter(DataSource.enabled == True).all()
+        source_ids = [source.id for source in enabled_sources]
+        
+        # Get raw data from enabled sources
+        raw_data = db.query(RawData).filter(
+            RawData.source_id.in_(source_ids)
+        ).order_by(RawData.created_at.desc()).limit(limit).all()
+        
+        return [
+            {
+                "id": data.id,
+                "source_name": data.source.name,
+                "title": data.title,
+                "content": data.content[:500] + "..." if len(data.content) > 500 else data.content,
+                "url": data.url,
+                "created_at": data.created_at.isoformat(),
+                "metadata": data.metadata_json
+            }
+            for data in raw_data
+        ]
+    except Exception as e:
+        logger.error(f"Failed to get prototype raw data: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/prototype/ideas")
+async def get_prototype_ideas(limit: int = 20, db: Session = Depends(get_db)):
+    """Get extracted ideas from prototype data."""
+    try:
+        from storage.models import ExtractedIdea
+        
+        ideas = db.query(ExtractedIdea).order_by(
+            ExtractedIdea.created_at.desc()
+        ).limit(limit).all()
+        
+        return [
+            {
+                "id": idea.id,
+                "title": idea.title,
+                "description": idea.description,
+                "domain": idea.domain,
+                "primary_metric": idea.primary_metric,
+                "idea_type": idea.idea_type,
+                "confidence_score": idea.confidence_score,
+                "created_at": idea.created_at.isoformat(),
+                "thought_process": idea.thought_process
+            }
+            for idea in ideas
+        ]
+    except Exception as e:
+        logger.error(f"Failed to get prototype ideas: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 async def _run_full_pipeline_background():
     """Background task for full pipeline."""
     try:

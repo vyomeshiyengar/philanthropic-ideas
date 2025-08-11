@@ -37,18 +37,18 @@ class Settings(BaseSettings):
             "base_url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils",
             "search_endpoint": "/esearch.fcgi",
             "fetch_endpoint": "/efetch.fcgi",
-            "enabled": True
+            "enabled": False  # Disabled for prototype
         },
         "semantic_scholar": {
             "base_url": "https://api.semanticscholar.org",
             "search_endpoint": "/graph/v1/paper/search",
-            "enabled": True
+            "enabled": False  # Disabled for prototype
         },
         "world_bank": {
             "base_url": "https://api.worldbank.org",
             "indicators_endpoint": "/v2/country/all/indicator",
             "projects_endpoint": "/v2/projects",
-            "enabled": True
+            "enabled": False  # Disabled for prototype
         },
         "nih_reporter": {
             "base_url": "https://api.reporter.nih.gov",
@@ -58,7 +58,7 @@ class Settings(BaseSettings):
         "cordis": {
             "base_url": "https://cordis.europa.eu",
             "projects_endpoint": "/projects",
-            "enabled": True
+            "enabled": False  # Disabled for prototype
         }
     }
     
@@ -175,6 +175,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"  # Allow extra fields from environment
 
 
 # Global settings instance

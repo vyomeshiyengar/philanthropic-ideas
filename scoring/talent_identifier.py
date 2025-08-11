@@ -20,7 +20,6 @@ class TalentIdentifier:
     """Identifies potential talent for philanthropic ideas."""
     
     def __init__(self):
-        self.crunchbase_api_key = settings.CRUNCHBASE_API_KEY
         self.google_api_key = settings.GOOGLE_API_KEY
         
         # Domain to expertise mapping
@@ -77,15 +76,9 @@ class TalentIdentifier:
                 # Search for talent
                 candidates = []
                 
-                # Search Crunchbase
-                crunchbase_candidates = await self._search_crunchbase(
-                    idea.title, expertise_areas, max_candidates // 2
-                )
-                candidates.extend(crunchbase_candidates)
-                
-                # Search web
+                # Search web (Google Search API only)
                 web_candidates = await self._search_web(
-                    idea.title, expertise_areas, max_candidates // 2
+                    idea.title, expertise_areas, max_candidates
                 )
                 candidates.extend(web_candidates)
                 
@@ -123,42 +116,10 @@ class TalentIdentifier:
     
     async def _search_crunchbase(self, idea_title: str, expertise_areas: List[str], 
                                max_results: int) -> List[Dict[str, Any]]:
-        """Search Crunchbase for potential talent."""
-        candidates = []
-        
-        if not self.crunchbase_api_key:
-            logger.warning("Crunchbase API key not available")
-            return candidates
-        
-        try:
-            # Search for people with relevant expertise
-            for expertise in expertise_areas[:3]:  # Limit to top 3 expertise areas
-                search_query = f"{expertise} {idea_title.split()[0]}"
-                
-                # This is a simplified version - in practice you'd use the actual Crunchbase API
-                # For now, we'll create mock candidates
-                mock_candidate = {
-                    "name": f"Dr. {expertise.title()} Expert",
-                    "title": f"Senior {expertise.title()} Researcher",
-                    "organization": f"{expertise.title()} Institute",
-                    "location": "San Francisco, CA",
-                    "expertise_areas": [expertise],
-                    "experience_years": 15,
-                    "education": ["PhD in " + expertise.title()],
-                    "source": "crunchbase",
-                    "source_url": f"https://crunchbase.com/person/{expertise.lower()}-expert",
-                    "confidence_score": 0.8
-                }
-                
-                candidates.append(mock_candidate)
-                
-                if len(candidates) >= max_results:
-                    break
-        
-        except Exception as e:
-            logger.error(f"Crunchbase search failed: {e}")
-        
-        return candidates
+        """Search Crunchbase for potential talent (disabled for prototype)."""
+        # Crunchbase search disabled for prototype
+        logger.info("Crunchbase search disabled for prototype - using Google Search API only")
+        return []
     
     async def _search_web(self, idea_title: str, expertise_areas: List[str], 
                          max_results: int) -> List[Dict[str, Any]]:

@@ -156,10 +156,11 @@ def main():
         print("2. Run data ingestion")
         print("3. Run full pipeline")
         print("4. Test caching functionality")
-        print("5. Exit")
+        print("5. Run prototype test")
+        print("6. Exit")
         print("=" * 40)
         
-        choice = input("Enter your choice (1-5): ").strip()
+        choice = input("Enter your choice (1-6): ").strip()
         
         if choice == "1":
             start_api_server()
@@ -175,10 +176,17 @@ def main():
         elif choice == "4":
             test_caching()
         elif choice == "5":
+            logger.info("Running prototype test...")
+            try:
+                subprocess.run([sys.executable, "test_prototype.py"], check=True)
+                logger.info("✓ Prototype test completed")
+            except Exception as e:
+                logger.error(f"✗ Prototype test failed: {e}")
+        elif choice == "6":
             logger.info("Goodbye!")
             break
         else:
-            print("Invalid choice. Please enter 1-5.")
+            print("Invalid choice. Please enter 1-6.")
 
 if __name__ == "__main__":
     sys.exit(main())

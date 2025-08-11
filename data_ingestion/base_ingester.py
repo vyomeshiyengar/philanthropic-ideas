@@ -167,7 +167,7 @@ class BaseDataIngester(ABC):
                     url=url,
                     publication_date=publication_date,
                     keywords=keywords,
-                    metadata=metadata
+                    metadata_json=metadata
                 )
                 session.add(raw_data)
                 session.commit()
@@ -244,8 +244,8 @@ class BaseDataIngester(ABC):
                     data_source.status = status
                     data_source.last_accessed = datetime.now()
                     if error_message:
-                        data_source.metadata = data_source.metadata or {}
-                        data_source.metadata["last_error"] = error_message
+                                            data_source.metadata_json = data_source.metadata_json or {}
+                    data_source.metadata_json["last_error"] = error_message
                     
                     session.commit()
                     logger.info(f"Updated data source status: {self.source_name} -> {status}")

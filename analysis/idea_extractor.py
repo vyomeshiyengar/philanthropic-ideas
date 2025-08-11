@@ -118,7 +118,7 @@ class IdeaExtractor:
                 
                 if domain:
                     # Filter by domain using metadata
-                    query = query.filter(RawData.metadata.contains({"domain": domain}))
+                    query = query.filter(RawData.metadata_json.contains({"domain": domain}))
                 
                 raw_data_items = query.all()
                 
@@ -205,6 +205,9 @@ class IdeaExtractor:
             title = self._generate_idea_title(sentence, domain)
             description = self._generate_idea_description(sentence, domain)
             
+            # Generate thought process
+            thought_process = self._generate_thought_process(sentence, domain, idea_type, confidence_score)
+            
             return {
                 "raw_data_id": raw_data.id,
                 "title": title,
@@ -217,7 +220,8 @@ class IdeaExtractor:
                 "source_sentence": sentence,
                 "source_title": raw_data.title,
                 "source_authors": raw_data.authors,
-                "source_url": raw_data.url
+                "source_url": raw_data.url,
+                "thought_process": thought_process
             }
             
         except Exception as e:
@@ -379,6 +383,48 @@ class IdeaExtractor:
         
         return description
     
+    def _generate_thought_process(self, sentence: str, domain: str, idea_type: str, confidence_score: float) -> str:
+        """Generate a thought process explanation for the extracted idea."""
+        thought_process = []
+        
+        # Domain classification reasoning
+        domain_keywords = self.opportunity_keywords.get(domain, [])
+        found_keywords = [kw for kw in domain_keywords if kw.lower() in sentence.lower()]
+        if found_keywords:
+            thought_process.append(f"Classified as {domain.replace('_', ' ')} domain based on keywords: {', '.join(found_keywords[:3])}")
+        
+        # Idea type reasoning
+        if idea_type == "newly_viable":
+            newly_viable_found = [phrase for phrase in self.newly_viable_phrases if phrase.lower() in sentence.lower()]
+            if newly_viable_found:
+                thought_process.append(f"Identified as newly viable opportunity due to: {', '.join(newly_viable_found[:2])}")
+        elif idea_type == "evergreen":
+            evergreen_found = [phrase for phrase in self.evergreen_phrases if phrase.lower() in sentence.lower()]
+            if evergreen_found:
+                thought_process.append(f"Identified as evergreen opportunity due to: {', '.join(evergreen_found[:2])}")
+        
+        # Confidence reasoning
+        if confidence_score >= 0.7:
+            thought_process.append("High confidence due to strong domain indicators and opportunity keywords")
+        elif confidence_score >= 0.5:
+            thought_process.append("Moderate confidence with clear domain classification")
+        else:
+            thought_process.append("Lower confidence but sufficient for initial screening")
+        
+        # Metric reasoning
+        metric_mapping = {
+            "health": "DALYs (Disability-Adjusted Life Years)",
+            "education": "Log income (correlates with educational outcomes)",
+            "economic_development": "Log income (direct economic impact)",
+            "animal_welfare": "WALYs (Welfare-Adjusted Life Years)",
+            "climate": "CO2-equivalent reduction",
+            "wellbeing": "WELBYs (Wellbeing-Adjusted Life Years)"
+        }
+        metric_explanation = metric_mapping.get(domain, "WELBYs (general wellbeing)")
+        thought_process.append(f"Primary metric: {metric_explanation}")
+        
+        return " | ".join(thought_process)
+    
     def _extract_ideas_from_full_text(self, full_text: str, raw_data: RawData) -> List[Dict[str, Any]]:
         """Extract ideas from full text content."""
         ideas = []
@@ -446,7 +492,8 @@ class IdeaExtractor:
                             primary_metric=idea_data["primary_metric"],
                             idea_type=idea_data["idea_type"],
                             confidence_score=idea_data["confidence_score"],
-                            extraction_method=idea_data["extraction_method"]
+                            extraction_method=idea_data["extraction_method"],
+                            thought_process=idea_data.get("thought_process", "")
                         )
                         
                         session.add(idea)

@@ -99,12 +99,11 @@ class NIHReporterIngester(BaseDataIngester):
                     
                     # Save to database
                     await self._save_raw_data(
-                        content=content,
+                        content_type="nih_project",
                         title=project_title,
-                        source_id=project_num,
+                        full_text=content,
                         url=f"https://reporter.nih.gov/project-details/{project_num}",
-                        metadata=metadata,
-                        domain=domain or "health_research"
+                        metadata=metadata
                     )
                     items_successful += 1
                     
@@ -193,12 +192,11 @@ class NIHReporterIngester(BaseDataIngester):
                     }
                     
                     await self._save_raw_data(
-                        content=content,
+                        content_type="nih_project_by_investigator",
                         title=project_title,
-                        source_id=project_num,
+                        full_text=content,
                         url=f"https://reporter.nih.gov/project-details/{project_num}",
-                        metadata=metadata,
-                        domain="health_research"
+                        metadata=metadata
                     )
                     items_successful += 1
                     
@@ -284,12 +282,11 @@ class NIHReporterIngester(BaseDataIngester):
                     }
                     
                     await self._save_raw_data(
-                        content=content,
+                        content_type="nih_project_by_organization",
                         title=project_title,
-                        source_id=project_num,
+                        full_text=content,
                         url=f"https://reporter.nih.gov/project-details/{project_num}",
-                        metadata=metadata,
-                        domain="health_research"
+                        metadata=metadata
                     )
                     items_successful += 1
                     
@@ -380,12 +377,11 @@ class NIHReporterIngester(BaseDataIngester):
                     }
                     
                     await self._save_raw_data(
-                        content=content,
+                        content_type="nih_project_by_funding",
                         title=project_title,
-                        source_id=project_num,
+                        full_text=content,
                         url=f"https://reporter.nih.gov/project-details/{project_num}",
-                        metadata=metadata,
-                        domain="health_research"
+                        metadata=metadata
                     )
                     items_successful += 1
                     
@@ -474,12 +470,11 @@ class NIHReporterIngester(BaseDataIngester):
                     }
                     
                     await self._save_raw_data(
-                        content=content,
+                        content_type="nih_recent_project",
                         title=project_title,
-                        source_id=project_num,
+                        full_text=content,
                         url=f"https://reporter.nih.gov/project-details/{project_num}",
-                        metadata=metadata,
-                        domain="health_research"
+                        metadata=metadata
                     )
                     items_successful += 1
                     
@@ -504,3 +499,23 @@ class NIHReporterIngester(BaseDataIngester):
                 items_failed=1,
                 error_message=str(e)
             )
+
+    async def fetch_details(self, item_id: str) -> Optional[Dict[str, Any]]:
+        """Fetch detailed information for a specific NIH project."""
+        try:
+            # NIH RePORTER doesn't have a direct details endpoint
+            # We'll construct the URL and try to get basic info
+            project_url = f"https://reporter.nih.gov/project-details/{item_id}"
+            
+            # For now, return basic project info
+            # In a full implementation, you might scrape the project page
+            return {
+                "project_id": item_id,
+                "url": project_url,
+                "source": "nih_reporter",
+                "note": "Detailed project information available at the URL"
+            }
+            
+        except Exception as e:
+            logging.error(f"Error fetching details for project {item_id}: {str(e)}")
+            return None

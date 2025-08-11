@@ -23,7 +23,7 @@ class DataSource(Base):
     rate_limit = Column(Integer, nullable=True)
     last_accessed = Column(DateTime, default=func.now())
     status = Column(String(50), default="active")  # active, inactive, error
-    metadata = Column(JSON, nullable=True)
+    metadata_json = Column(JSON, nullable=True)
     
     # Relationships
     raw_data = relationship("RawData", back_populates="data_source")
@@ -43,7 +43,7 @@ class RawData(Base):
     url = Column(String(500), nullable=True)
     publication_date = Column(DateTime, nullable=True)
     keywords = Column(JSON, nullable=True)  # List of keywords
-    metadata = Column(JSON, nullable=True)  # Additional metadata
+    metadata_json = Column(JSON, nullable=True)  # Additional metadata
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
     
@@ -65,6 +65,7 @@ class ExtractedIdea(Base):
     idea_type = Column(String(50), nullable=False)  # newly_viable, evergreen
     confidence_score = Column(Float, nullable=True)  # 0-1 confidence in extraction
     extraction_method = Column(String(100), nullable=False)  # nlp, manual, hybrid
+    thought_process = Column(Text, nullable=True)  # Explanation of extraction reasoning
     created_at = Column(DateTime, default=func.now())
     
     # Relationships

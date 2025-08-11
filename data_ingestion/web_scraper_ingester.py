@@ -23,7 +23,7 @@ class RSSFeedItem:
     author: Optional[str]
     content: Optional[str]
 
-class WebScraperIngester(WebScraperIngester):
+class WebScraperIngester(BaseDataIngester):
     def __init__(self):
         super().__init__("web_scraper", {"base_url": "https://example.com", "enabled": True})
         self.session = None
@@ -63,11 +63,11 @@ class WebScraperIngester(WebScraperIngester):
                 total_failed += 1
                 
         return IngestionResult(
-            source_name="web_scraper",
+            success=total_failed == 0,
             items_processed=total_processed,
             items_successful=total_successful,
             items_failed=total_failed,
-            raw_data=results
+            metadata={"sources_scraped": len(self.expert_sources)}
         )
         
     async def _scrape_source(self, source: Dict[str, Any], query: str, max_results: int) -> List[Dict[str, Any]]:
@@ -330,11 +330,11 @@ class WebScraperIngester(WebScraperIngester):
                 total_failed += 1
                 
         return IngestionResult(
-            source_name="web_scraper",
+            success=total_failed == 0,
             items_processed=total_processed,
             items_successful=total_successful,
             items_failed=total_failed,
-            raw_data=all_results
+            metadata={"sources_scraped": len(self.expert_sources)}
         )
         
     async def scrape_recent_content(self, days: int = 30, max_results_per_source: int = 20) -> IngestionResult:
@@ -377,9 +377,32 @@ class WebScraperIngester(WebScraperIngester):
                 total_failed += 1
                 
         return IngestionResult(
-            source_name="web_scraper",
+            success=total_failed == 0,
             items_processed=total_processed,
             items_successful=total_successful,
             items_failed=total_failed,
-            raw_data=all_results
+            metadata={"days_back": days}
         )
+
+    async def fetch_details(self, item_id: str) -> Optional[Dict[str, Any]]:
+        """Fetch detailed information for a specific web content item."""
+        try:
+            # For web scraper, item_id is typically a URL
+            if not item_id.startswith(('http://', 'https://')):
+                logger.warning(f"Invalid URL for web scraper: {item_id}")
+                return None
+            
+            content = await self._scrape_article_content(item_id)
+            if content:
+                return {
+                    "url": item_id,
+                    "content": content,
+                    "source": "web_scraper",
+                    "scraped_at": datetime.now().isoformat()
+                }
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error fetching details for {item_id}: {e}")
+            return None
