@@ -370,18 +370,69 @@ class IdeaExtractor:
         return title
     
     def _generate_idea_description(self, sentence: str, domain: str) -> str:
-        """Generate a description for the idea."""
+        """Generate a detailed description for the idea with key metrics and impact."""
         # Clean up the sentence
-        description = sentence.strip()
+        base_description = sentence.strip()
+        base_description = re.sub(r'\s+', ' ', base_description)
         
-        # Remove extra whitespace
-        description = re.sub(r'\s+', ' ', description)
+        # Define domain-specific details
+        domain_details = {
+            "health": {
+                "metrics": "DALYs (Disability-Adjusted Life Years)",
+                "impact": "health outcomes and quality of life",
+                "beneficiaries": "patients, communities, healthcare systems"
+            },
+            "education": {
+                "metrics": "Log income (correlates with educational outcomes)",
+                "impact": "learning outcomes and economic mobility",
+                "beneficiaries": "students, educators, communities"
+            },
+            "economic_development": {
+                "metrics": "Log income (direct economic impact)",
+                "impact": "economic growth and poverty reduction",
+                "beneficiaries": "low-income individuals, communities, economies"
+            },
+            "animal_welfare": {
+                "metrics": "WALYs (Welfare-Adjusted Life Years)",
+                "impact": "animal suffering reduction and welfare improvement",
+                "beneficiaries": "farmed animals, wild animals, ecosystems"
+            },
+            "climate": {
+                "metrics": "CO2-equivalent reduction",
+                "impact": "climate change mitigation and environmental protection",
+                "beneficiaries": "global population, future generations, ecosystems"
+            },
+            "wellbeing": {
+                "metrics": "WELBYs (Wellbeing-Adjusted Life Years)",
+                "impact": "overall wellbeing and life satisfaction",
+                "beneficiaries": "individuals, families, communities"
+            }
+        }
         
-        # Truncate if too long
-        if len(description) > 500:
-            description = description[:497] + "..."
+        details = domain_details.get(domain, {
+            "metrics": "WELBYs (general wellbeing)",
+            "impact": "overall positive impact",
+            "beneficiaries": "affected populations"
+        })
         
-        return description
+        # Generate comprehensive description
+        description_parts = []
+        
+        # First sentence: What it is
+        description_parts.append(f"This intervention focuses on {base_description.lower()}")
+        
+        # Second sentence: Key metrics and impact
+        description_parts.append(f"Key metrics: {details['metrics']}. Expected impact: {details['impact']}.")
+        
+        # Third sentence: Who is impacted
+        description_parts.append(f"Primary beneficiaries: {details['beneficiaries']}.")
+        
+        # Combine and truncate if needed
+        full_description = " ".join(description_parts)
+        if len(full_description) > 800:
+            full_description = full_description[:797] + "..."
+        
+        return full_description
     
     def _generate_thought_process(self, sentence: str, domain: str, idea_type: str, confidence_score: float) -> str:
         """Generate a thought process explanation for the extracted idea."""

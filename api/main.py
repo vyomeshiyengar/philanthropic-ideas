@@ -546,9 +546,16 @@ async def get_prototype_raw_data(limit: int = 50, db: Session = Depends(get_db))
         active_sources = db.query(DataSource).filter(DataSource.status == "active").all()
         source_ids = [source.id for source in active_sources]
         
-        # Get raw data from active sources
+        # Get raw data from active sources, filtering out poor quality data
         raw_data = db.query(RawData).filter(
-            RawData.data_source_id.in_(source_ids)
+            RawData.data_source_id.in_(source_ids),
+            RawData.title != "...",  # Filter out empty titles
+            RawData.title != "",     # Filter out empty titles
+            RawData.title.isnot(None),  # Filter out null titles
+            RawData.full_text.isnot(None),  # Filter out null content
+            RawData.full_text != "",  # Filter out empty content
+            RawData.full_text != "...",  # Filter out placeholder content
+            RawData.full_text != "No content available",  # Filter out placeholder content
         ).order_by(RawData.created_at.desc()).limit(limit).all()
         
         return [
@@ -556,7 +563,7 @@ async def get_prototype_raw_data(limit: int = 50, db: Session = Depends(get_db))
                 "id": data.id,
                 "source_name": data.data_source.name,
                 "title": data.title,
-                "content": data.full_text[:500] + "..." if data.full_text and len(data.full_text) > 500 else (data.full_text or ""),
+                "content": data.full_text[:300] + "..." if data.full_text and len(data.full_text) > 300 else (data.full_text or ""),
                 "url": data.url,
                 "created_at": data.created_at.isoformat(),
                 "metadata": data.metadata_json
@@ -573,8 +580,19 @@ async def get_prototype_ideas(limit: int = 20, db: Session = Depends(get_db)):
     try:
         from storage.models import ExtractedIdea
         
-        ideas = db.query(ExtractedIdea).order_by(
-            ExtractedIdea.created_at.desc()
+        # Get ideas, filtering out low quality ones and ordering by confidence
+        ideas = db.query(ExtractedIdea).filter(
+            ExtractedIdea.title != "...",  # Filter out empty titles
+            ExtractedIdea.title != "",     # Filter out empty titles
+            ExtractedIdea.title.isnot(None),  # Filter out null titles
+            ExtractedIdea.confidence_score >= 0.3,  # Filter out very low confidence ideas
+            # Filter out generic titles
+            ~ExtractedIdea.title.like("The % for %"),  # "The X for Y" pattern
+            ~ExtractedIdea.title.like("% for %"),      # "X for Y" pattern
+            ~ExtractedIdea.title.like("% % %"),        # Very generic patterns
+        ).order_by(
+            ExtractedIdea.confidence_score.desc(),  # Order by confidence first
+            ExtractedIdea.created_at.desc()         # Then by recency
         ).limit(limit).all()
         
         return [

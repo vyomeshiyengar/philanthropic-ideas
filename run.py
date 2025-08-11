@@ -57,6 +57,7 @@ def download_nltk_data():
         
         # Download required NLTK data
         nltk.download('punkt', quiet=True)
+        nltk.download('punkt_tab', quiet=True)  # Required for idea extraction
         nltk.download('stopwords', quiet=True)
         nltk.download('wordnet', quiet=True)
         logger.info("✓ NLTK data downloaded")

@@ -37,7 +37,12 @@ class WebScraperIngester(BaseDataIngester):
         self.session = aiohttp.ClientSession(
             timeout=aiohttp.ClientTimeout(total=30),
             headers={
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Accept-Encoding': 'gzip, deflate',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1'
             }
         )
         return self
@@ -78,8 +83,10 @@ class WebScraperIngester(BaseDataIngester):
         """Scrape content from a specific source."""
         source_type = source.get("type", "blog")  # Default to blog instead of rss
         
-        # Map all source types to blog scraping for now
-        if source_type in ["blog", "substack", "organization", "forum", "magazine", "publisher"]:
+        # Special handling for Substack
+        if source_type == "substack":
+            return await self._scrape_substack(source, query, max_results)
+        elif source_type in ["blog", "organization", "forum", "magazine", "publisher"]:
             return await self._scrape_blog(source, query, max_results)
         elif source_type == "rss":
             return await self._scrape_rss_feed(source, query, max_results)
@@ -160,7 +167,7 @@ class WebScraperIngester(BaseDataIngester):
                 article_links = self._extract_article_links(soup, blog_url)
                 
                 # Limit the number of articles to process
-                article_links = article_links[:min(max_results, 5)]  # Limit to 5 articles per source
+                article_links = article_links[:min(max_results, 3)]  # Limit to 3 articles per source
                 
                 items = []
                 for i, link in enumerate(article_links):
@@ -200,6 +207,148 @@ class WebScraperIngester(BaseDataIngester):
             return []
         except Exception as e:
             logger.debug(f"Error scraping blog {blog_url}: {e}")
+            return []
+            
+    async def _scrape_substack(self, source: Dict[str, Any], query: str, max_results: int) -> List[Dict[str, Any]]:
+        """Scrape content from Substack newsletters."""
+        substack_url = source.get("url")
+        if not substack_url:
+            logger.warning(f"No URL provided for Substack source: {source['name']}")
+            return []
+            
+        try:
+            # Try multiple approaches for Substack
+            items = []
+            
+            # Approach 1: Try RSS feed if available
+            rss_url = f"{substack_url}/feed"
+            try:
+                rss_items = await self._scrape_rss_feed({"rss_url": rss_url, "name": source["name"]}, query, max_results)
+                items.extend(rss_items)
+                logger.info(f"Found {len(rss_items)} items via RSS for {source['name']}")
+            except Exception as e:
+                logger.debug(f"RSS approach failed for {source['name']}: {e}")
+            
+            # Approach 2: Try direct API access (Substack has a public API)
+            if len(items) < max_results:
+                try:
+                    api_items = await self._scrape_substack_api(source, query, max_results - len(items))
+                    items.extend(api_items)
+                    logger.info(f"Found {len(api_items)} items via API for {source['name']}")
+                except Exception as e:
+                    logger.debug(f"API approach failed for {source['name']}: {e}")
+            
+            # Approach 3: Try archive page scraping
+            if len(items) < max_results:
+                try:
+                    archive_items = await self._scrape_substack_archive(source, query, max_results - len(items))
+                    items.extend(archive_items)
+                    logger.info(f"Found {len(archive_items)} items via archive for {source['name']}")
+                except Exception as e:
+                    logger.debug(f"Archive approach failed for {source['name']}: {e}")
+            
+            return items[:max_results]
+            
+        except Exception as e:
+            logger.error(f"Error scraping Substack {substack_url}: {e}")
+            return []
+            
+    async def _scrape_substack_api(self, source: Dict[str, Any], query: str, max_results: int) -> List[Dict[str, Any]]:
+        """Scrape content using Substack's public API."""
+        substack_url = source.get("url")
+        substack_name = source["name"].lower().replace(" ", "")
+        
+        try:
+            # Substack API endpoint
+            api_url = f"https://{substack_name}.substack.com/api/v1/publication/posts"
+            
+            timeout = aiohttp.ClientTimeout(total=15, connect=5)
+            async with self.session.get(api_url, timeout=timeout) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    posts = data.get("posts", [])
+                    
+                    items = []
+                    for post in posts[:max_results]:
+                        if self._matches_query_text(post.get("title", "") + " " + post.get("subtitle", ""), query):
+                            # Get full post content
+                            post_url = f"{substack_url}/p/{post.get('slug', '')}"
+                            content = await self._scrape_article_content(post_url)
+                            
+                            if content:
+                                items.append({
+                                    "source_name": source["name"],
+                                    "source_url": substack_url,
+                                    "title": post.get("title", "No title"),
+                                    "url": post_url,
+                                    "description": content[:500] + "..." if len(content) > 500 else content,
+                                    "content": content,
+                                    "author": post.get("author", {}).get("name"),
+                                    "published_date": post.get("published_at"),
+                                    "scraped_at": datetime.utcnow().isoformat(),
+                                    "content_type": "article"
+                                })
+                    
+                    return items
+                else:
+                    logger.debug(f"Substack API returned status {response.status}")
+                    return []
+                    
+        except Exception as e:
+            logger.debug(f"Substack API scraping failed: {e}")
+            return []
+            
+    async def _scrape_substack_archive(self, source: Dict[str, Any], query: str, max_results: int) -> List[Dict[str, Any]]:
+        """Scrape content from Substack archive page."""
+        substack_url = source.get("url")
+        archive_url = f"{substack_url}/archive"
+        
+        try:
+            timeout = aiohttp.ClientTimeout(total=15, connect=5)
+            async with self.session.get(archive_url, timeout=timeout) as response:
+                if response.status == 200:
+                    content = await response.text()
+                    soup = BeautifulSoup(content, 'html.parser')
+                    
+                    # Look for post links in archive
+                    post_links = []
+                    for link in soup.find_all('a', href=True):
+                        href = link.get('href', '')
+                        if '/p/' in href and href.startswith('/'):
+                            full_url = f"{substack_url}{href}"
+                            title = link.get_text(strip=True)
+                            if title and self._matches_query_text(title, query):
+                                post_links.append((full_url, title))
+                    
+                    # Get content from found posts
+                    items = []
+                    for url, title in post_links[:max_results]:
+                        try:
+                            content = await self._scrape_article_content(url)
+                            if content:
+                                items.append({
+                                    "source_name": source["name"],
+                                    "source_url": substack_url,
+                                    "title": title,
+                                    "url": url,
+                                    "description": content[:500] + "..." if len(content) > 500 else content,
+                                    "content": content,
+                                    "author": None,
+                                    "published_date": None,
+                                    "scraped_at": datetime.utcnow().isoformat(),
+                                    "content_type": "article"
+                                })
+                        except Exception as e:
+                            logger.debug(f"Error scraping post {url}: {e}")
+                            continue
+                    
+                    return items
+                else:
+                    logger.debug(f"Archive page returned status {response.status}")
+                    return []
+                    
+        except Exception as e:
+            logger.debug(f"Archive scraping failed: {e}")
             return []
             
     async def _scrape_article_content(self, url: str) -> Optional[str]:
