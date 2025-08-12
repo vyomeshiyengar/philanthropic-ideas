@@ -81,7 +81,7 @@ ratelimit==2.2.1
 
 # Text processing
 textblob==0.17.1
-wordcloud==1.9.2
+# wordcloud==1.9.2  # Removed due to Python 3.12 compatibility issues
 
 # AI Integration
 openai>=1.0.0
