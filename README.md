@@ -113,6 +113,46 @@ python -m pip install --upgrade pip setuptools wheel
 
 ### Step 3: Install Dependencies
 
+**For Python 3.12+ (Recommended):**
+```bash
+# Use the Python 3.12 compatible requirements file
+pip install -r requirements-py312.txt
+```
+
+**For older Python versions:**
+```bash
+# Use the original requirements file
+pip install -r requirements.txt
+```
+
+**Note:** If you encounter issues with `wordcloud` on Python 3.12+, the package has been removed from the Python 3.12 requirements file as it's not essential for core functionality.
+
+**Alternative: Use the installation script**
+```bash
+# Run the automated installation script
+python install.py
+```
+
+This script will:
+- Detect your Python version
+- Install appropriate dependencies
+- Download required spaCy and NLTK models
+- Provide troubleshooting tips if needed
+
+**macOS/Linux:**
+```bash
+# Create virtual environment
+python3 -m venv .venv
+
+# Activate virtual environment
+source .venv/bin/activate
+
+# Upgrade pip, setuptools, and wheel
+python -m pip install --upgrade pip setuptools wheel
+```
+
+### Step 3: Install Dependencies
+
 ```bash
 # Install PyTorch (CPU version for Python 3.12)
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
