@@ -167,7 +167,7 @@ class WebScraperIngester(BaseDataIngester):
                 article_links = self._extract_article_links(soup, blog_url)
                 
                 # Limit the number of articles to process
-                article_links = article_links[:min(max_results, 3)]  # Limit to 3 articles per source
+                article_links = article_links[:min(max_results, 10)]  # Limit to 10 articles per source
                 
                 items = []
                 for i, link in enumerate(article_links):
@@ -280,40 +280,57 @@ class WebScraperIngester(BaseDataIngester):
         substack_name = parsed_url.netloc.replace('.substack.com', '')
         
         try:
-            # Substack API endpoint
-            api_url = f"https://{substack_name}.substack.com/api/v1/publication/posts"
+            # Try multiple API endpoints
+            api_urls = [
+                f"https://{substack_name}.substack.com/api/v1/publication/posts",
+                f"https://{substack_name}.substack.com/api/v1/posts",
+                f"https://{substack_name}.substack.com/api/posts"
+            ]
             
-            timeout = aiohttp.ClientTimeout(total=15, connect=5)
-            async with self.session.get(api_url, timeout=timeout) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    posts = data.get("posts", [])
-                    
-                    items = []
-                    for post in posts[:max_results]:
-                        if self._matches_query_text(post.get("title", "") + " " + post.get("subtitle", ""), query):
-                            # Get full post content
-                            post_url = f"{substack_url}/p/{post.get('slug', '')}"
-                            content = await self._scrape_article_content(post_url)
+            for api_url in api_urls:
+                logger.debug(f"Trying API endpoint: {api_url}")
+            
+                timeout = aiohttp.ClientTimeout(total=15, connect=5)
+                async with self.session.get(api_url, timeout=timeout) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        posts = data.get("posts", [])
+                        
+                        if posts:
+                            logger.debug(f"Found {len(posts)} posts via API for {source['name']}")
                             
-                            if content:
-                                items.append({
-                                    "source_name": source["name"],
-                                    "source_url": substack_url,
-                                    "title": post.get("title", "No title"),
-                                    "url": post_url,
-                                    "description": content[:500] + "..." if len(content) > 500 else content,
-                                    "content": content,
-                                    "author": post.get("author", {}).get("name"),
-                                    "published_date": post.get("published_at"),
-                                    "scraped_at": datetime.utcnow().isoformat(),
-                                    "content_type": "article"
-                                })
-                    
-                    return items
-                else:
-                    logger.debug(f"Substack API returned status {response.status}")
-                    return []
+                            items = []
+                            for post in posts[:max_results]:
+                                if self._matches_query_text(post.get("title", "") + " " + post.get("subtitle", ""), query):
+                                    # Get full post content
+                                    post_url = f"{substack_url}/p/{post.get('slug', '')}"
+                                    content = await self._scrape_article_content(post_url)
+                                    
+                                    if content:
+                                        items.append({
+                                            "source_name": source["name"],
+                                            "source_url": substack_url,
+                                            "title": post.get("title", "No title"),
+                                            "url": post_url,
+                                            "description": content[:500] + "..." if len(content) > 500 else content,
+                                            "content": content,
+                                            "author": post.get("author", {}).get("name"),
+                                            "published_date": post.get("published_at"),
+                                            "scraped_at": datetime.utcnow().isoformat(),
+                                            "content_type": "article"
+                                        })
+                            
+                            return items
+                        else:
+                            logger.debug(f"No posts found in API response for {source['name']}")
+                            continue  # Try next API endpoint
+                    else:
+                        logger.debug(f"Substack API {api_url} returned status {response.status}")
+                        continue  # Try next API endpoint
+            
+            # If we get here, no API endpoints worked
+            logger.debug(f"All API endpoints failed for {source['name']}")
+            return []
                     
         except Exception as e:
             logger.debug(f"Substack API scraping failed: {e}")
@@ -362,8 +379,18 @@ class WebScraperIngester(BaseDataIngester):
                             title = link.get_text(strip=True)
                             # Skip navigation, footer, etc.
                             if (href.startswith('/') and 
-                                not any(skip in href.lower() for skip in ['/tag/', '/author/', '/about', '/contact', '/privacy']) and
+                                not any(skip in href.lower() for skip in ['/tag/', '/author/', '/about', '/contact', '/privacy', '/t/']) and
                                 title and len(title) > 10):
+                                full_url = f"{substack_url}{href}"
+                                post_links.append((full_url, title))
+                    
+                    # Method 4: Look for Substack-specific patterns
+                    if not post_links:
+                        for link in soup.find_all('a', href=True):
+                            href = link.get('href', '')
+                            title = link.get_text(strip=True)
+                            # Look for Substack post patterns
+                            if (href.startswith('/p/') and title and len(title) > 10):
                                 full_url = f"{substack_url}{href}"
                                 post_links.append((full_url, title))
                     
@@ -504,28 +531,78 @@ class WebScraperIngester(BaseDataIngester):
         """Extract article links from a blog page."""
         links = []
         
-        # Common selectors for article links
+        # More comprehensive selectors for article links
         link_selectors = [
+            # Specific patterns
             'a[href*="/post/"]',
             'a[href*="/article/"]',
             'a[href*="/blog/"]',
             'a[href*="/entry/"]',
+            'a[href*="/p/"]',  # Substack pattern
+            'a[href*="/t/"]',  # Another common pattern
+            
+            # CSS classes
             '.post-title a',
             '.entry-title a',
+            '.article-title a',
+            '.blog-title a',
             'article a',
-            '.article-link'
+            '.article-link',
+            '.post-link',
+            '.entry-link',
+            
+            # Generic article containers
+            'article h1 a',
+            'article h2 a',
+            'article h3 a',
+            '.post h1 a',
+            '.post h2 a',
+            '.entry h1 a',
+            '.entry h2 a',
+            
+            # List items
+            'li a[href*="/"]',
+            '.post-list a',
+            '.article-list a',
+            '.blog-list a'
         ]
         
+        # Try all selectors
         for selector in link_selectors:
             elements = soup.select(selector)
             for element in elements:
                 href = element.get('href')
                 if href:
                     full_url = urljoin(base_url, href)
-                    if full_url not in links:
+                    # Filter out non-article links
+                    if (full_url not in links and 
+                        not href.startswith('#') and 
+                        not href.startswith('mailto:') and
+                        not href.startswith('javascript:') and
+                        len(href) > 5 and  # Avoid very short links
+                        not any(skip in href.lower() for skip in ['/tag/', '/category/', '/author/', '/about/', '/contact/', '/privacy/', '/terms/'])):
+                        links.append(full_url)
+        
+        # If we still don't have enough links, try a more aggressive approach
+        if len(links) < 3:
+            # Look for any links that might be articles
+            all_links = soup.find_all('a', href=True)
+            for link in all_links:
+                href = link.get('href')
+                if href:
+                    full_url = urljoin(base_url, href)
+                    # Check if it looks like an article URL
+                    if (full_url not in links and
+                        not href.startswith('#') and
+                        not href.startswith('mailto:') and
+                        not href.startswith('javascript:') and
+                        len(href) > 10 and  # Longer URLs are more likely to be articles
+                        not any(skip in href.lower() for skip in ['/tag/', '/category/', '/author/', '/about/', '/contact/', '/privacy/', '/terms/', '/search/', '/login/']) and
+                        # Check if the link text looks like a title
+                        (link.get_text().strip() and len(link.get_text().strip()) > 10)):
                         links.append(full_url)
                         
-        return links
+        return links[:10]  # Limit to 10 links per source
         
     def _extract_title_from_url(self, url: str) -> str:
         """Extract a title from URL path."""

@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     GOOGLE_API_KEY: Optional[str] = None
     GOOGLE_CUSTOM_SEARCH_ENGINE_ID: Optional[str] = None
     NIH_API_KEY: Optional[str] = None
+    OPENAI_API_KEY: Optional[str] = None
     
     # Rate limiting
     OPENALEX_RATE_LIMIT: int = 100  # requests per hour

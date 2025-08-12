@@ -51,6 +51,8 @@ CRUNCHBASE_API_KEY=your_crunchbase_api_key_here
 GOOGLE_API_KEY=AIzaSyCPm3TFfqrG8nAFYtDgBAE6JiKYZV26iPk
 GOOGLE_CUSTOM_SEARCH_ENGINE_ID=a6faf4d3140ef4b28
 NIH_API_KEY=da1855ba8b0acd7360ff329610ca03cd1b08
+# OpenAI API (for AI-powered idea synthesis)
+OPENAI_API_KEY=your_openai_api_key_here
 
 # Rate Limiting (requests per hour)
 OPENALEX_RATE_LIMIT=100
@@ -152,10 +154,74 @@ def test_caching():
     except Exception as e:
         logger.error(f"✗ Cache testing failed: {e}")
 
+def run_hybrid_idea_extraction():
+    """Run hybrid idea extraction using the hybrid extractor."""
+    try:
+        logger.info("Running hybrid idea extraction...")
+        subprocess.run([sys.executable, "test_hybrid_extractor.py"], check=True)
+        logger.info("✓ Hybrid idea extraction completed")
+    except Exception as e:
+        logger.error(f"✗ Hybrid idea extraction failed: {e}")
+
+def run_full_pipeline():
+    """Run the complete pipeline including data ingestion and hybrid idea extraction."""
+    try:
+        logger.info("Running complete pipeline...")
+        
+        # Step 1: Data ingestion
+        logger.info("Step 1: Running data ingestion...")
+        subprocess.run([sys.executable, "-m", "data_ingestion.main"], check=True)
+        logger.info("✓ Data ingestion completed")
+        
+        # Step 2: Hybrid idea extraction
+        logger.info("Step 2: Running hybrid idea extraction...")
+        subprocess.run([sys.executable, "test_hybrid_extractor.py"], check=True)
+        logger.info("✓ Hybrid idea extraction completed")
+        
+        logger.info("🎉 Complete pipeline finished successfully!")
+        
+    except Exception as e:
+        logger.error(f"✗ Pipeline failed: {e}")
+
+def check_hybrid_extractor_status():
+    """Check the status of the hybrid extractor."""
+    try:
+        logger.info("Checking hybrid extractor status...")
+        
+        # Import and test the hybrid extractor
+        from analysis.hybrid_idea_extractor import HybridIdeaExtractor
+        from config.settings import Settings
+        
+        settings = Settings()
+        hybrid_extractor = HybridIdeaExtractor()
+        
+        print("\n🔧 Hybrid Extractor Status:")
+        print(f"  OpenAI API: {'✅ Available' if hybrid_extractor.ai_client else '❌ Not available'}")
+        print(f"  NLP Pipeline: {'✅ Available' if hasattr(hybrid_extractor, 'nlp') and hybrid_extractor.nlp else '❌ Not available'}")
+        print(f"  Enhanced Keywords: ✅ {len(hybrid_extractor.enhanced_keywords)} domains")
+        
+        if hybrid_extractor.ai_client:
+            print("  🤖 AI synthesis will be used for idea generation")
+        else:
+            print("  📚 Traditional synthesis will be used (AI not available)")
+        
+        print("\n💡 The hybrid extractor combines:")
+        print("  • Traditional NLP-based extraction")
+        print("  • AI synthesis (when available) or traditional synthesis")
+        print("  • Pattern recognition and gap identification")
+        print("  • Idea ranking and filtering")
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"✗ Failed to check hybrid extractor status: {e}")
+        return False
+
 def main():
     """Main function."""
     print("=" * 60)
     print("Philanthropic Ideas Generator")
+    print("(Using Hybrid Idea Extraction Method)")
     print("=" * 60)
     
     # Check dependencies
@@ -174,45 +240,49 @@ def main():
     if not initialize_database():
         return 1
     
+    # Check hybrid extractor status
+    check_hybrid_extractor_status()
+    
     # Show menu
     while True:
         print("\n" + "=" * 40)
         print("What would you like to do?")
         print("1. Start API server")
         print("2. Run data ingestion")
-        print("3. Run full pipeline")
-        print("4. Test caching functionality")
-        print("5. Run prototype test")
-        print("6. Exit")
+        print("3. Run hybrid idea extraction")
+        print("4. Run full pipeline (ingestion + extraction)")
+        print("5. Check hybrid extractor status")
+        print("6. Test caching functionality")
+        print("7. Run prototype test")
+        print("8. Exit")
         print("=" * 40)
         
-        choice = input("Enter your choice (1-6): ").strip()
+        choice = input("Enter your choice (1-8): ").strip()
         
         if choice == "1":
             start_api_server()
         elif choice == "2":
             run_data_ingestion()
         elif choice == "3":
-            logger.info("Running full pipeline...")
-            try:
-                # This would run the full pipeline
-                logger.info("Full pipeline completed")
-            except Exception as e:
-                logger.error(f"Pipeline failed: {e}")
+            run_hybrid_idea_extraction()
         elif choice == "4":
-            test_caching()
+            run_full_pipeline()
         elif choice == "5":
+            check_hybrid_extractor_status()
+        elif choice == "6":
+            test_caching()
+        elif choice == "7":
             logger.info("Running prototype test...")
             try:
                 subprocess.run([sys.executable, "test_prototype.py"], check=True)
                 logger.info("✓ Prototype test completed")
             except Exception as e:
                 logger.error(f"✗ Prototype test failed: {e}")
-        elif choice == "6":
+        elif choice == "8":
             logger.info("Goodbye!")
             break
         else:
-            print("Invalid choice. Please enter 1-6.")
+            print("Invalid choice. Please enter 1-8.")
 
 if __name__ == "__main__":
     sys.exit(main())

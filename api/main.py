@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from storage.database import get_db, init_database, db_manager
 from storage.cache import api_cache
 from data_ingestion.main import DataIngestionOrchestrator
-from analysis.idea_extractor import IdeaExtractor
+from analysis.hybrid_idea_extractor import HybridIdeaExtractor
 from scoring.idea_evaluator import IdeaEvaluator
 from scoring.talent_identifier import TalentIdentifier
 
@@ -95,21 +95,20 @@ class TalentResponse(BaseModel):
 
 # Global instances
 ingestion_orchestrator = None
-idea_extractor = None
 idea_evaluator = None
 talent_identifier = None
 
 @app.on_event("startup")
 async def startup_event():
     """Initialize the application on startup."""
-    global ingestion_orchestrator, idea_extractor, idea_evaluator, talent_identifier
+    global ingestion_orchestrator, idea_evaluator, talent_identifier
     
     # Initialize database
     init_database()
     
     # Initialize components
     ingestion_orchestrator = DataIngestionOrchestrator()
-    idea_extractor = IdeaExtractor()
+    hybrid_idea_extractor = HybridIdeaExtractor()
     idea_evaluator = IdeaEvaluator()
     talent_identifier = TalentIdentifier()
     
@@ -226,16 +225,16 @@ async def extract_ideas(request: ExtractionRequest, background_tasks: Background
 async def _extract_ideas_background(domain: Optional[str], confidence_threshold: float):
     """Background task for idea extraction."""
     try:
-        # Extract ideas
-        ideas = idea_extractor.extract_ideas_from_raw_data(domain=domain)
+        # Extract ideas using hybrid extractor
+        ideas = hybrid_idea_extractor.extract_ideas_from_raw_data(domain=domain)
         
         # Filter by confidence threshold
         filtered_ideas = [idea for idea in ideas if idea.get("confidence_score", 0) >= confidence_threshold]
         
         # Save ideas
-        saved_count = idea_extractor.save_extracted_ideas(filtered_ideas)
+        saved_count = hybrid_idea_extractor.save_extracted_ideas(filtered_ideas)
         
-        logger.info(f"Extracted and saved {saved_count} ideas")
+        logger.info(f"Extracted and saved {saved_count} ideas using hybrid extractor")
         
     except Exception as e:
         logger.error(f"Background idea extraction failed: {e}")
@@ -483,11 +482,11 @@ async def _run_prototype_pipeline_background():
         ingestion_results = await ingestion_orchestrator.run_full_ingestion()
         logger.info(f"Prototype ingestion completed: {ingestion_results['summary']['total_successful']} items")
         
-        # Step 2: Idea extraction
-        logger.info("Step 2: Running idea extraction...")
-        ideas = idea_extractor.extract_ideas_from_raw_data()
-        saved_count = idea_extractor.save_extracted_ideas(ideas)
-        logger.info(f"Extraction completed: {saved_count} ideas saved")
+        # Step 2: Idea extraction (using hybrid approach)
+        logger.info("Step 2: Running hybrid idea extraction...")
+        ideas = hybrid_idea_extractor.extract_ideas_from_raw_data()
+        saved_count = hybrid_idea_extractor.save_extracted_ideas(ideas)
+        logger.info(f"Hybrid extraction completed: {saved_count} ideas saved")
         
         # Step 3: Idea evaluation
         logger.info("Step 3: Running idea evaluation...")
@@ -522,7 +521,7 @@ async def get_prototype_status(db: Session = Depends(get_db)):
         total_ideas = db.query(ExtractedIdea).count()
         evaluated_ideas = db.query(IdeaEvaluation).count()
         
-        # Get top ideas
+        # Get top ideas (5 for status display)
         top_ideas = idea_evaluator.get_top_ideas(limit=5) if evaluated_ideas > 0 else []
         
         return {
@@ -574,6 +573,92 @@ async def get_prototype_raw_data(limit: int = 50, db: Session = Depends(get_db))
         logger.error(f"Failed to get prototype raw data: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/prototype/top-ideas")
+async def get_prototype_top_ideas(limit: int = 10):
+    """Get top evaluated ideas for the prototype."""
+    try:
+        ideas = idea_evaluator.get_top_ideas(limit=limit)
+        
+        # Ensure ideas is a list
+        if not isinstance(ideas, list):
+            logger.warning(f"get_top_ideas returned non-list: {type(ideas)}")
+            ideas = []
+        
+        return [
+            {
+                "idea_id": idea["idea_id"],
+                "title": idea["title"],
+                "description": idea["description"],
+                "domain": idea["domain"],
+                "primary_metric": idea["primary_metric"],
+                "idea_type": idea["idea_type"],
+                "overall_score": idea["overall_score"],
+                "impact_score": idea["impact_score"],
+                "neglectedness_score": idea["neglectedness_score"],
+                "tractability_score": idea["tractability_score"],
+                "scalability_score": idea["scalability_score"],
+                "benchmark_comparison": idea["benchmark_comparison"],
+                "scoring_explanation": _generate_scoring_explanation(idea)
+            }
+            for idea in ideas
+        ]
+    except Exception as e:
+        logger.error(f"Failed to get prototype top ideas: {e}")
+        return []  # Return empty list instead of raising exception
+
+def _generate_scoring_explanation(idea: Dict[str, Any]) -> str:
+    """Generate a detailed explanation of how the idea was scored."""
+    explanation_parts = []
+    
+    # Overall score explanation
+    overall_score = idea.get("overall_score", 0)
+    if overall_score >= 8.0:
+        explanation_parts.append("🏆 Exceptional overall score indicates high potential across all criteria")
+    elif overall_score >= 6.0:
+        explanation_parts.append("⭐ Strong overall score with good balance of impact and feasibility")
+    elif overall_score >= 4.0:
+        explanation_parts.append("📈 Moderate overall score with room for improvement")
+    else:
+        explanation_parts.append("⚠️ Lower overall score suggests limited potential or high barriers")
+    
+    # Impact score explanation
+    impact_score = idea.get("impact_score", 0)
+    if impact_score >= 8.0:
+        explanation_parts.append("💥 High impact potential with significant benefits")
+    elif impact_score >= 6.0:
+        explanation_parts.append("📊 Good impact potential with measurable benefits")
+    else:
+        explanation_parts.append("📉 Limited impact potential or unclear benefits")
+    
+    # Neglectedness score explanation
+    neglectedness_score = idea.get("neglectedness_score", 0)
+    if neglectedness_score >= 8.0:
+        explanation_parts.append("🎯 Highly neglected area with low competition")
+    elif neglectedness_score >= 6.0:
+        explanation_parts.append("🔍 Moderately neglected with some existing work")
+    else:
+        explanation_parts.append("⚠️ Well-funded area with high competition")
+    
+    # Tractability score explanation
+    tractability_score = idea.get("tractability_score", 0)
+    if tractability_score >= 8.0:
+        explanation_parts.append("✅ Highly tractable with clear implementation path")
+    elif tractability_score >= 6.0:
+        explanation_parts.append("🛠️ Moderately tractable with some implementation challenges")
+    else:
+        explanation_parts.append("🚧 Difficult to implement with significant barriers")
+    
+    # Scalability score explanation
+    scalability_score = idea.get("scalability_score", 0)
+    if scalability_score >= 8.0:
+        explanation_parts.append("🌍 Highly scalable with global potential")
+    elif scalability_score >= 6.0:
+        explanation_parts.append("📈 Good scalability with regional potential")
+    else:
+        explanation_parts.append("🔒 Limited scalability or context-dependent")
+    
+    return " | ".join(explanation_parts)
+
 @app.get("/prototype/ideas")
 async def get_prototype_ideas(limit: int = 20, db: Session = Depends(get_db)):
     """Get extracted ideas from prototype data."""
@@ -624,10 +709,10 @@ async def _run_full_pipeline_background():
         logger.info(f"Ingestion completed: {ingestion_results['summary']['total_successful']} items")
         
         # Step 2: Idea extraction
-        logger.info("Step 2: Running idea extraction...")
-        ideas = idea_extractor.extract_ideas_from_raw_data()
-        saved_count = idea_extractor.save_extracted_ideas(ideas)
-        logger.info(f"Extraction completed: {saved_count} ideas saved")
+        logger.info("Step 2: Running hybrid idea extraction...")
+        ideas = hybrid_idea_extractor.extract_ideas_from_raw_data()
+        saved_count = hybrid_idea_extractor.save_extracted_ideas(ideas)
+        logger.info(f"Hybrid extraction completed: {saved_count} ideas saved")
         
         # Step 3: Idea evaluation
         logger.info("Step 3: Running idea evaluation...")

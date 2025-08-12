@@ -349,23 +349,49 @@ class IdeaExtractor:
     
     def _generate_idea_title(self, sentence: str, domain: str) -> str:
         """Generate a concise title for the idea."""
+        # Clean the sentence
+        sentence = sentence.strip()
+        
         # Extract key phrases from the sentence
         doc = self.nlp(sentence)
         
-        # Look for noun phrases
+        # Look for noun phrases that represent interventions or opportunities
         noun_phrases = [chunk.text for chunk in doc.noun_chunks]
         
-        if noun_phrases:
-            # Use the first significant noun phrase
-            for phrase in noun_phrases:
-                if len(phrase.split()) >= 2 and len(phrase) < 50:
+        # Look for intervention-related keywords
+        intervention_keywords = [
+            "intervention", "program", "initiative", "approach", "method", "strategy",
+            "treatment", "therapy", "vaccine", "prevention", "education", "training",
+            "support", "assistance", "aid", "help", "improvement", "enhancement"
+        ]
+        
+        # Try to find a meaningful title
+        for phrase in noun_phrases:
+            if len(phrase.split()) >= 2 and len(phrase) < 50:
+                # Check if it contains intervention keywords
+                phrase_lower = phrase.lower()
+                if any(keyword in phrase_lower for keyword in intervention_keywords):
                     return f"{phrase.title()} for {domain.replace('_', ' ').title()}"
         
-        # Fallback: use first few words
-        words = sentence.split()[:6]
+        # If no intervention keywords found, look for action verbs + nouns
+        for token in doc:
+            if token.pos_ == "VERB" and token.dep_ in ["ROOT", "ccomp"]:
+                # Find the object of the verb
+                for child in token.children:
+                    if child.dep_ in ["dobj", "pobj"]:
+                        title = f"{token.text.title()} {child.text.title()}"
+                        if len(title) < 60:
+                            return f"{title} for {domain.replace('_', ' ').title()}"
+        
+        # Fallback: create a more descriptive title
+        words = sentence.split()[:8]
         title = " ".join(words).title()
         if len(title) > 60:
             title = title[:57] + "..."
+        
+        # Ensure it's not just a generic title
+        if title.lower().startswith(("the ", "a ", "an ")):
+            title = title[4:] if title.lower().startswith("the ") else title[2:]
         
         return title
     
