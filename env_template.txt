@@ -11,6 +11,7 @@ CRUNCHBASE_API_KEY=your_crunchbase_api_key_here
 GOOGLE_API_KEY=your_google_api_key_here
 GOOGLE_CUSTOM_SEARCH_ENGINE_ID=your_google_custom_search_engine_id_here
 NIH_API_KEY=your_nih_api_key_here
+OPENAI_API_KEY=your_openai_api_key_here
 
 # Rate Limiting (requests per hour)
 OPENALEX_RATE_LIMIT=100

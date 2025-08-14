@@ -58,18 +58,32 @@ class WebScraperIngester(BaseDataIngester):
         total_successful = 0
         total_failed = 0
         
-        for source in self.expert_sources:
-            if not source.get("enabled", True):
-                continue
-                
-            try:
-                source_results = await self._scrape_source(source, query, max_results)
-                results.extend(source_results)
-                total_processed += len(source_results)
-                total_successful += len(source_results)
-            except Exception as e:
-                logger.error(f"Failed to scrape source {source['name']}: {e}")
-                total_failed += 1
+        # Add timeout to prevent infinite loops
+        import asyncio
+        timeout_seconds = 300  # 5 minutes max for all sources
+        
+        try:
+            async with asyncio.timeout(timeout_seconds):
+                for source in self.expert_sources:
+                    if not source.get("enabled", True):
+                        continue
+                        
+                    try:
+                        # Add individual source timeout
+                        async with asyncio.timeout(30):  # 30 seconds per source
+                            source_results = await self._scrape_source(source, query, max_results)
+                            results.extend(source_results)
+                            total_processed += len(source_results)
+                            total_successful += len(source_results)
+                    except asyncio.TimeoutError:
+                        logger.warning(f"Timeout scraping source {source['name']}, skipping...")
+                        total_failed += 1
+                    except Exception as e:
+                        logger.error(f"Failed to scrape source {source['name']}: {e}")
+                        total_failed += 1
+                        
+        except asyncio.TimeoutError:
+            logger.warning(f"Overall timeout reached after {timeout_seconds} seconds, stopping web scraping")
                 
         return IngestionResult(
             success=total_failed == 0,

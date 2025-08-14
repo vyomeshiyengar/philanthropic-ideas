@@ -670,11 +670,7 @@ async def get_prototype_ideas(limit: int = 20, db: Session = Depends(get_db)):
             ExtractedIdea.title != "...",  # Filter out empty titles
             ExtractedIdea.title != "",     # Filter out empty titles
             ExtractedIdea.title.isnot(None),  # Filter out null titles
-            ExtractedIdea.confidence_score >= 0.3,  # Filter out very low confidence ideas
-            # Filter out generic titles
-            ~ExtractedIdea.title.like("The % for %"),  # "The X for Y" pattern
-            ~ExtractedIdea.title.like("% for %"),      # "X for Y" pattern
-            ~ExtractedIdea.title.like("% % %"),        # Very generic patterns
+            ExtractedIdea.confidence_score >= 0.2,  # Lower confidence threshold to show more ideas
         ).order_by(
             ExtractedIdea.confidence_score.desc(),  # Order by confidence first
             ExtractedIdea.created_at.desc()         # Then by recency

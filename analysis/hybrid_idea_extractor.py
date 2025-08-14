@@ -24,6 +24,13 @@ class HybridIdeaExtractor(IdeaExtractor):
     def __init__(self, ai_provider: str = "openai"):
         super().__init__()
         self.ai_provider = ai_provider
+        
+        # Model configuration for different tasks
+        self.models = {
+            "data_ingestion": "gpt-4o-mini",  # 4o-mini for data ingestion (lower cost)
+            "idea_synthesis": "gpt-4o"        # 4o for idea determination (higher quality)
+        }
+        
         self.ai_client = self._initialize_ai_client()
         
         # Enhanced keywords for better clustering
@@ -78,13 +85,13 @@ class HybridIdeaExtractor(IdeaExtractor):
                 
                 try:
                     client = OpenAI(api_key=api_key)
-                    # Test the client with a simple call
+                    # Test the client with a simple call using 4o-mini
                     test_response = client.chat.completions.create(
-                        model="gpt-3.5-turbo",
+                        model=self.models["data_ingestion"],
                         messages=[{"role": "user", "content": "test"}],
                         max_tokens=5
                     )
-                    logger.info("OpenAI API client initialized successfully")
+                    logger.info("OpenAI API client initialized successfully with 4o-mini and 4o models")
                     return client
                 except Exception as api_error:
                     if "quota" in str(api_error).lower() or "insufficient_quota" in str(api_error).lower():
@@ -125,13 +132,28 @@ class HybridIdeaExtractor(IdeaExtractor):
                 
                 logger.info(f"Starting hybrid idea extraction from {len(raw_data_items)} items")
                 
-                # Step 1: Traditional sentence extraction (baseline)
+                # Step 1: Traditional sentence extraction (baseline) + AI ingestion
                 basic_ideas = []
+                ai_ingested_ideas = []
+                
                 for item in raw_data_items:
+                    # Traditional extraction
                     ideas = self._extract_ideas_from_item(item)
                     basic_ideas.extend(ideas)
+                    
+                    # AI ingestion for individual items (using 4o-mini)
+                    if self.ai_client:
+                        try:
+                            text_content = f"{item.title} {item.abstract or ''}"
+                            domain = self._classify_domain(text_content, self.nlp(text_content))
+                            if domain:
+                                ai_ideas = self._call_ai_for_data_ingestion(text_content, domain)
+                                ai_ingested_ideas.extend(ai_ideas)
+                        except Exception as e:
+                            logger.warning(f"AI ingestion failed for item {item.id}: {e}")
                 
                 logger.info(f"Extracted {len(basic_ideas)} basic ideas")
+                logger.info(f"AI ingested {len(ai_ingested_ideas)} ideas using 4o-mini")
                 
                 # Step 2: AI synthesis from related sources (optional)
                 synthetic_ideas = []
@@ -150,7 +172,7 @@ class HybridIdeaExtractor(IdeaExtractor):
                 logger.info(f"Identified {len(pattern_ideas)} pattern-based ideas")
                 
                 # Step 4: Combine and rank all ideas
-                all_ideas = basic_ideas + synthetic_ideas + pattern_ideas
+                all_ideas = basic_ideas + ai_ingested_ideas + synthetic_ideas + pattern_ideas
                 ranked_ideas = self._rank_and_filter_ideas(all_ideas)
                 
                 logger.info(f"Final result: {len(ranked_ideas)} high-quality ideas")
@@ -215,7 +237,7 @@ class HybridIdeaExtractor(IdeaExtractor):
         return "\n\n".join(context_parts)
     
     def _call_ai_for_synthesis(self, context: str, domain: str) -> List[Dict[str, Any]]:
-        """Call AI service to generate synthetic ideas."""
+        """Call AI service to generate synthetic ideas using 4o model for high-quality idea determination."""
         try:
             prompt = f"""
 Based on these related sources about {domain.replace('_', ' ')}:
@@ -236,7 +258,7 @@ For each idea, provide:
 - Implementation: Key steps to implement
 - Challenges: Potential obstacles and solutions
 
-Format as JSON:
+IMPORTANT: Respond ONLY with valid JSON in this exact format:
 {{
     "ideas": [
         {{
@@ -249,10 +271,12 @@ Format as JSON:
         }}
     ]
 }}
+
+Do not include any other text, only the JSON response.
 """
 
             response = self.ai_client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model=self.models["idea_synthesis"],
                 messages=[
                     {"role": "system", "content": "You are an expert in philanthropic intervention design and effective altruism."},
                     {"role": "user", "content": prompt}
@@ -297,8 +321,93 @@ Format as JSON:
             logger.error(f"AI synthesis failed: {e}")
             return []
     
+    def _call_ai_for_data_ingestion(self, text_content: str, domain: str) -> List[Dict[str, Any]]:
+        """Call AI service for data ingestion using 4o-mini model (lower cost)."""
+        try:
+            prompt = f"""
+Analyze this text about {domain.replace('_', ' ')} and extract potential philanthropic intervention ideas:
+
+{text_content[:2000]}  # Limit text length for cost efficiency
+
+Extract 1-2 intervention ideas that:
+1. Are directly related to the content
+2. Have clear potential for impact
+3. Are feasible to implement
+4. Address a specific problem or opportunity
+
+For each idea, provide:
+- Title: A concise, descriptive title
+- Description: Brief explanation of the intervention
+- Key Innovation: What makes this approach valuable
+- Expected Impact: Specific outcomes and metrics
+- Implementation: Key steps to implement
+- Challenges: Potential obstacles and solutions
+
+IMPORTANT: Respond ONLY with valid JSON in this exact format:
+{{
+    "ideas": [
+        {{
+            "title": "Title here",
+            "description": "Description here",
+            "key_innovation": "Innovation here",
+            "expected_impact": "Impact here",
+            "implementation": "Implementation here",
+            "challenges": "Challenges here"
+        }}
+    ]
+}}
+
+Do not include any other text, only the JSON response.
+"""
+
+            response = self.ai_client.chat.completions.create(
+                model=self.models["data_ingestion"],
+                messages=[
+                    {"role": "system", "content": "You are an expert in analyzing research and identifying philanthropic opportunities."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.6,
+                max_tokens=800  # Lower token limit for cost efficiency
+            )
+            
+            content = response.choices[0].message.content
+            
+            # Parse JSON response
+            try:
+                data = json.loads(content)
+                ideas = data.get("ideas", [])
+                
+                # Convert to our format
+                formatted_ideas = []
+                for idea in ideas:
+                    formatted_idea = {
+                        "title": idea.get("title", ""),
+                        "description": idea.get("description", ""),
+                        "domain": domain,
+                        "primary_metric": self._classify_primary_metric(idea.get("description", ""), domain),
+                        "idea_type": "newly_viable",  # AI-generated ideas are typically newly viable
+                        "confidence_score": 0.7,  # Slightly lower confidence for 4o-mini
+                        "extraction_method": "ai_ingestion",
+                        "key_innovation": idea.get("key_innovation", ""),
+                        "expected_impact": idea.get("expected_impact", ""),
+                        "implementation": idea.get("implementation", ""),
+                        "challenges": idea.get("challenges", ""),
+                        "thought_process": f"AI-ingested idea from {domain} domain using 4o-mini model"
+                    }
+                    formatted_ideas.append(formatted_idea)
+                
+                return formatted_ideas
+                
+            except json.JSONDecodeError:
+                logger.warning("Failed to parse AI ingestion response as JSON")
+                return []
+                
+        except Exception as e:
+            logger.error(f"AI data ingestion failed: {e}")
+            return []
+    
     def _generate_fallback_synthetic_ideas(self, sources: List[RawData]) -> List[Dict[str, Any]]:
-        """Generate synthetic ideas using traditional methods when AI is not available."""
+        """Generate sophisticated synthetic ideas using enhanced cross-paper analysis."""
         try:
             # Group sources by domain
             domain_groups = self._group_sources_by_domain(sources)
@@ -309,70 +418,235 @@ Format as JSON:
                 if len(domain_sources) < 2:
                     continue  # Need multiple sources for synthesis
                 
-                # Extract key concepts from all sources in this domain
-                all_keywords = []
-                all_titles = []
-                all_abstracts = []
+                # Enhanced cross-paper analysis
+                cross_paper_insights = self._analyze_cross_paper_context_simple(domain_sources, domain)
                 
-                for source in domain_sources:
-                    # Extract keywords from title and abstract
-                    text_content = f"{source.title} {source.abstract or ''}"
-                    doc = self.nlp(text_content)
-                    
-                    # Extract noun phrases and key terms
-                    for chunk in doc.noun_chunks:
-                        if len(chunk.text.split()) >= 2 and len(chunk.text) < 50:
-                            all_keywords.append(chunk.text.lower())
-                    
-                    # Extract domain-specific keywords
-                    for keyword in self.enhanced_keywords.get(domain, []):
-                        if keyword.lower() in text_content.lower():
-                            all_keywords.append(keyword.lower())
-                    
-                    all_titles.append(source.title)
-                    if source.abstract:
-                        all_abstracts.append(source.abstract[:200])
-                
-                # Find common themes and gaps
-                keyword_counts = {}
-                for keyword in all_keywords:
-                    keyword_counts[keyword] = keyword_counts.get(keyword, 0) + 1
-                
-                # Generate synthetic ideas based on common themes
-                common_themes = [k for k, v in keyword_counts.items() if v >= 2]
-                
-                if common_themes:
-                    # Create synthetic idea combining common themes
-                    theme_str = ", ".join(common_themes[:3])
-                    title = f"Integrated {domain.replace('_', ' ').title()} Intervention Using {theme_str.title()}"
-                    
-                    description = f"This intervention combines multiple approaches from {len(domain_sources)} related studies in {domain}. "
-                    description += f"Key elements include: {theme_str}. "
-                    description += f"Based on analysis of {len(all_titles)} research papers, this integrated approach addresses "
-                    description += f"gaps identified across multiple studies in the {domain} domain."
-                    
-                    synthetic_idea = {
-                        "title": title,
-                        "description": description,
-                        "domain": domain,
-                        "primary_metric": self._get_metric_for_domain(domain),
-                        "idea_type": "newly_viable",
-                        "confidence_score": 0.7,  # Good confidence for traditional synthesis
-                        "extraction_method": "traditional_synthesis",
-                        "key_innovation": f"Integration of {len(domain_sources)} related approaches in {domain}",
-                        "expected_impact": f"Enhanced outcomes through combined insights from multiple {domain} studies",
-                        "implementation": f"Implement key elements from {len(domain_sources)} related interventions",
-                        "challenges": "Coordination of multiple intervention components and measurement of combined effects",
-                        "thought_process": f"Traditional synthesis combining insights from {len(domain_sources)} related sources in {domain} domain"
-                    }
-                    
-                    synthetic_ideas.append(synthetic_idea)
+                # Generate multiple types of synthetic ideas
+                ideas = self._generate_contextual_ideas_simple(domain_sources, cross_paper_insights, domain)
+                synthetic_ideas.extend(ideas)
             
             return synthetic_ideas
             
         except Exception as e:
             logger.error(f"Failed to generate fallback synthetic ideas: {e}")
             return []
+    
+    def _analyze_cross_paper_context_simple(self, sources: List[RawData], domain: str) -> Dict[str, Any]:
+        """Simple but effective cross-paper context analysis."""
+        try:
+            # Extract key concepts from each source
+            all_keywords = []
+            all_titles = []
+            all_abstracts = []
+            all_concepts = []
+            
+            for source in sources:
+                # Extract keywords from title and abstract
+                text_content = f"{source.title} {source.abstract or ''}"
+                doc = self.nlp(text_content)
+                
+                # Extract noun phrases and key terms
+                for chunk in doc.noun_chunks:
+                    if len(chunk.text.split()) >= 2 and len(chunk.text) < 50:
+                        all_keywords.append(chunk.text.lower())
+                        all_concepts.append(chunk.text.lower())
+                
+                # Extract domain-specific keywords
+                for keyword in self.enhanced_keywords.get(domain, []):
+                    if keyword.lower() in text_content.lower():
+                        all_keywords.append(keyword.lower())
+                        all_concepts.append(keyword.lower())
+                
+                all_titles.append(source.title)
+                if source.abstract:
+                    all_abstracts.append(source.abstract[:200])
+            
+            # Find common themes and patterns
+            from collections import Counter
+            keyword_counts = Counter(all_keywords)
+            concept_counts = Counter(all_concepts)
+            
+            # Identify common themes (appearing in multiple sources)
+            common_themes = [k for k, v in keyword_counts.items() if v >= 2]
+            frequent_concepts = [k for k, v in concept_counts.items() if v >= 2]
+            
+            # Identify potential gaps (concepts that appear in few sources)
+            rare_concepts = [k for k, v in concept_counts.items() if v == 1 and len(k.split()) >= 2]
+            
+            # Find complementary concepts (appear together in different sources)
+            complementary_pairs = []
+            for i, source1 in enumerate(sources):
+                for j, source2 in enumerate(sources[i+1:], i+1):
+                    text1 = f"{source1.title} {source1.abstract or ''}".lower()
+                    text2 = f"{source2.title} {source2.abstract or ''}".lower()
+                    
+                    # Find concepts that appear in both sources
+                    concepts1 = set([c for c in all_concepts if c in text1])
+                    concepts2 = set([c for c in all_concepts if c in text2])
+                    
+                    # Find complementary concepts (in one but not the other)
+                    complement1 = concepts1 - concepts2
+                    complement2 = concepts2 - concepts1
+                    
+                    if complement1 and complement2:
+                        for c1 in list(complement1)[:2]:  # Limit to 2 per source
+                            for c2 in list(complement2)[:2]:
+                                complementary_pairs.append((c1, c2))
+            
+            return {
+                'common_themes': common_themes,
+                'frequent_concepts': frequent_concepts,
+                'rare_concepts': rare_concepts,
+                'complementary_pairs': complementary_pairs[:5],  # Limit to 5 pairs
+                'source_count': len(sources),
+                'total_concepts': len(all_concepts),
+                'unique_concepts': len(set(all_concepts))
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to analyze cross-paper context: {e}")
+            return {}
+    
+    def _generate_contextual_ideas_simple(self, sources: List[RawData], insights: Dict[str, Any], domain: str) -> List[Dict[str, Any]]:
+        """Generate contextual ideas based on simple cross-paper analysis."""
+        ideas = []
+        
+        # Generate theme-based integration ideas
+        if insights.get('common_themes'):
+            idea = self._generate_theme_integration_idea(insights, domain)
+            if idea:
+                ideas.append(idea)
+        
+        # Generate gap-filling ideas
+        if insights.get('rare_concepts'):
+            idea = self._generate_gap_filling_idea_simple(insights, domain)
+            if idea:
+                ideas.append(idea)
+        
+        # Generate complementary synthesis ideas
+        if insights.get('complementary_pairs'):
+            idea = self._generate_complementary_synthesis_idea(insights, domain)
+            if idea:
+                ideas.append(idea)
+        
+        # Generate comprehensive integration idea
+        if insights.get('frequent_concepts'):
+            idea = self._generate_comprehensive_integration_idea(insights, domain)
+            if idea:
+                ideas.append(idea)
+        
+        return ideas
+    
+    def _generate_theme_integration_idea(self, insights: Dict[str, Any], domain: str) -> Dict[str, Any]:
+        """Generate an idea based on common themes across papers."""
+        common_themes = insights.get('common_themes', [])
+        if not common_themes:
+            return None
+        
+        theme_str = ", ".join(common_themes[:3])
+        title = f"Integrated {domain.replace('_', ' ').title()} Approach Using {theme_str.title()}"
+        
+        description = f"This intervention integrates the most frequently identified themes from {insights['source_count']} related studies in {domain}. "
+        description += f"Key elements include: {theme_str}. "
+        description += f"Based on cross-paper analysis revealing {len(common_themes)} common themes across multiple {domain} interventions."
+        
+        return {
+            "title": title,
+            "description": description,
+            "domain": domain,
+            "primary_metric": self._get_metric_for_domain(domain),
+            "idea_type": "newly_viable",
+            "confidence_score": 0.75,
+            "extraction_method": "cross_paper_theme_integration",
+            "key_innovation": f"Integration of {len(common_themes)} common themes from {insights['source_count']} studies",
+            "expected_impact": f"Enhanced outcomes through evidence-based theme integration",
+            "implementation": f"Systematic integration of {theme_str} approaches",
+            "challenges": "Ensuring proper coordination of multiple thematic elements",
+            "thought_process": f"Cross-paper theme analysis: identified {len(common_themes)} common themes across {insights['source_count']} {domain} studies"
+        }
+    
+    def _generate_gap_filling_idea_simple(self, insights: Dict[str, Any], domain: str) -> Dict[str, Any]:
+        """Generate an idea to address gaps identified in cross-paper analysis."""
+        rare_concepts = insights.get('rare_concepts', [])
+        if not rare_concepts:
+            return None
+        
+        # Select a promising rare concept
+        rare_concept = rare_concepts[0] if rare_concepts else "novel approach"
+        
+        title = f"Novel {rare_concept.title()} Intervention for {domain.replace('_', ' ').title()}"
+        description = f"This intervention addresses a research gap by focusing on {rare_concept}, which appears in only one of {insights['source_count']} analyzed studies. "
+        description += f"This represents an opportunity to explore under-researched approaches in {domain} interventions."
+        
+        return {
+            "title": title,
+            "description": description,
+            "domain": domain,
+            "primary_metric": self._get_metric_for_domain(domain),
+            "idea_type": "newly_viable",
+            "confidence_score": 0.7,
+            "extraction_method": "cross_paper_gap_analysis",
+            "key_innovation": f"Focus on under-researched {rare_concept} approach",
+            "expected_impact": f"Addresses critical gap in {domain} research",
+            "implementation": f"Develop and test {rare_concept} methodology",
+            "challenges": f"Limited existing evidence for {rare_concept} approach",
+            "thought_process": f"Gap analysis: {rare_concept} appears in only 1 of {insights['source_count']} {domain} studies"
+        }
+    
+    def _generate_complementary_synthesis_idea(self, insights: Dict[str, Any], domain: str) -> Dict[str, Any]:
+        """Generate an idea based on complementary concepts from different papers."""
+        complementary_pairs = insights.get('complementary_pairs', [])
+        if not complementary_pairs:
+            return None
+        
+        # Select a promising complementary pair
+        concept1, concept2 = complementary_pairs[0]
+        
+        title = f"Complementary {concept1.title()}-{concept2.title()} Synthesis for {domain.replace('_', ' ').title()}"
+        description = f"This intervention synthesizes complementary approaches: {concept1} and {concept2}. "
+        description += f"Cross-paper analysis revealed these concepts appear in different studies but could be combined for enhanced {domain} outcomes."
+        
+        return {
+            "title": title,
+            "description": description,
+            "domain": domain,
+            "primary_metric": self._get_metric_for_domain(domain),
+            "idea_type": "newly_viable",
+            "confidence_score": 0.8,
+            "extraction_method": "cross_paper_complementary_synthesis",
+            "key_innovation": f"Synthesis of complementary {concept1} and {concept2} approaches",
+            "expected_impact": f"Synergistic effects through complementary concept integration",
+            "implementation": f"Sequential or parallel implementation of {concept1} and {concept2}",
+            "challenges": "Coordinating timing and integration of complementary approaches",
+            "thought_process": f"Complementary analysis: {concept1} and {concept2} appear in different studies but could be combined"
+        }
+    
+    def _generate_comprehensive_integration_idea(self, insights: Dict[str, Any], domain: str) -> Dict[str, Any]:
+        """Generate a comprehensive integration idea based on frequent concepts."""
+        frequent_concepts = insights.get('frequent_concepts', [])
+        if not frequent_concepts:
+            return None
+        
+        concept_str = ", ".join(frequent_concepts[:3])
+        
+        title = f"Comprehensive {domain.replace('_', ' ').title()} Integration Using {concept_str.title()}"
+        description = f"This intervention integrates the most frequently identified concepts from {insights['source_count']} studies: {concept_str}. "
+        description += f"Cross-paper analysis shows these concepts appear consistently across multiple {domain} interventions."
+        
+        return {
+            "title": title,
+            "description": description,
+            "domain": domain,
+            "primary_metric": self._get_metric_for_domain(domain),
+            "idea_type": "newly_viable",
+            "confidence_score": 0.85,
+            "extraction_method": "cross_paper_comprehensive_integration",
+            "key_innovation": f"Comprehensive integration of {len(frequent_concepts)} frequent concepts",
+            "expected_impact": f"Enhanced outcomes through evidence-based comprehensive integration",
+            "implementation": f"Systematic integration of {concept_str} approaches",
+            "challenges": "Managing complexity of multiple integrated approaches",
+            "thought_process": f"Comprehensive analysis: integrated {len(frequent_concepts)} frequent concepts from {insights['source_count']} {domain} studies"
+        }
     
     def _identify_cross_source_patterns(self, sources: List[RawData]) -> List[Dict[str, Any]]:
         """Identify patterns across multiple sources to generate ideas."""

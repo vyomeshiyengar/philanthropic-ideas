@@ -66,20 +66,15 @@ class Settings(BaseSettings):
         }
     }
     
-    # Expert blogs and sources
+    # Expert blogs and sources (removed problematic Substack sources that cause infinite loops)
     EXPERT_SOURCES: List[Dict] = [
         {"name": "Dwarkesh Patel", "url": "https://www.dwarkeshpatel.com", "type": "blog"},
         {"name": "Astral Codex Ten", "url": "https://www.astralcodexten.com", "type": "blog"},
         {"name": "Open Philanthropy", "url": "https://www.openphilanthropy.org", "type": "organization"},
         {"name": "Rethink Priorities", "url": "https://rethinkpriorities.org", "type": "organization"},
         {"name": "EA Forum", "url": "https://forum.effectivealtruism.org", "type": "forum"},
-        {"name": "Construction Physics", "url": "https://constructionphysics.substack.com", "type": "substack"},
-        {"name": "Living Literature Reviews", "url": "https://mattsclancy.substack.com", "type": "substack"},
         {"name": "Michael Nielsen", "url": "https://michaelnielsen.org", "type": "blog"},
-        {"name": "Lauren Gilbert", "url": "https://laurengilbert.substack.com", "type": "substack"},
-        {"name": "Sarah Constantin", "url": "https://srconstantin.substack.com", "type": "substack"},
         {"name": "Jacob Trefethen", "url": "https://trefethen.medium.com", "type": "blog"},
-        {"name": "Farm Animal Welfare", "url": "https://farmanimalwelfare.substack.com", "type": "substack"},
         {"name": "Wild Animal Initiative", "url": "https://wildanimalinitiative.org/research", "type": "organization"},
         {"name": "Statecraft", "url": "https://www.statecraft.pub", "type": "blog"},
         {"name": "Slow Boring", "url": "https://www.slowboring.com", "type": "blog"},
@@ -87,7 +82,6 @@ class Settings(BaseSettings):
         {"name": "Asimov Press", "url": "https://asimov.press", "type": "publisher"},
         {"name": "The Great Gender Divergence", "url": "https://thegreatgenderdivergence.com", "type": "blog"},
         {"name": "Devon Zuegel", "url": "https://devonzuegel.com", "type": "blog"},
-        {"name": "Scientific Discovery", "url": "https://www.scientificdiscovery.substack.com", "type": "substack"},
         {"name": "Center for Global Development", "url": "https://www.cgdev.org", "type": "organization"},
         {"name": "Lant Pritchett", "url": "https://lantpritchett.org", "type": "blog"},
         {"name": "Gwern", "url": "https://www.gwern.net", "type": "blog"},
