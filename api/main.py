@@ -455,6 +455,96 @@ async def run_full_pipeline(background_tasks: BackgroundTasks):
         logger.error(f"Failed to start full pipeline: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# Full extraction endpoints
+@app.post("/extraction/run-full")
+async def run_full_extraction(background_tasks: BackgroundTasks):
+    """Run full extraction with AI and cross-paper analysis."""
+    try:
+        # Run full extraction in background
+        background_tasks.add_task(_run_full_extraction_background)
+        
+        return {
+            "message": "Full extraction started in background",
+            "steps": ["ai_processing", "cross_paper_analysis", "idea_generation", "evaluation"],
+            "target": "100 new ideas"
+        }
+    except Exception as e:
+        logger.error(f"Failed to start full extraction: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+async def _run_full_extraction_background():
+    """Background task for full extraction."""
+    try:
+        logger.info("Starting full extraction...")
+        
+        # Initialize components
+        from analysis.hybrid_idea_extractor import HybridIdeaExtractor
+        from scoring.idea_evaluator import IdeaEvaluator
+        from storage.database import db_manager
+        from storage.models import RawData
+        
+        extractor = HybridIdeaExtractor(ai_provider="openai")
+        evaluator = IdeaEvaluator()
+        
+        # Step 1: AI processing and cross-paper analysis
+        logger.info("Step 1: Running AI processing and cross-paper analysis...")
+        
+        # Get raw data for processing
+        with db_manager.get_session() as session:
+            raw_count = session.query(RawData).count()
+            sample_size = min(100, raw_count)
+            raw_data_items = session.query(RawData).limit(sample_size).all()
+            logger.info(f"Processing {len(raw_data_items)} raw data items...")
+        
+        # Step 2: Generate ideas using hybrid approach
+        logger.info("Step 2: Generating ideas using hybrid approach...")
+        # The extractor will query the database itself - we don't need to pass raw_data_items
+        ideas = extractor.extract_ideas_from_raw_data()
+        saved_count = extractor.save_extracted_ideas(ideas)
+        logger.info(f"Generated {saved_count} ideas")
+        
+        # Step 3: Evaluate all ideas
+        logger.info("Step 3: Evaluating all ideas...")
+        evaluation_results = evaluator.evaluate_all_ideas()
+        logger.info(f"Evaluation completed: {evaluation_results['evaluated']} ideas evaluated")
+        
+        logger.info("Full extraction completed successfully!")
+        
+    except Exception as e:
+        logger.error(f"Full extraction failed: {e}")
+
+@app.get("/extraction/status")
+async def get_extraction_status(db: Session = Depends(get_db)):
+    """Get the current status of full extraction."""
+    try:
+        from storage.models import RawData, ExtractedIdea, IdeaEvaluation
+        
+        # Get idea statistics
+        total_ideas = db.query(ExtractedIdea).count()
+        evaluated_ideas = db.query(IdeaEvaluation).count()
+        
+        # Get top ideas (5 for status display)
+        top_ideas = idea_evaluator.get_top_ideas(limit=5) if evaluated_ideas > 0 else []
+        
+        # For now, we'll simulate the progress
+        # In a real implementation, you'd track this in a database table
+        ai_processing_complete = total_ideas > 0
+        cross_paper_complete = total_ideas > 0
+        ideas_generated = total_ideas
+        evaluation_complete = evaluated_ideas > 0
+        
+        return {
+            "ai_processing_complete": ai_processing_complete,
+            "cross_paper_complete": cross_paper_complete,
+            "ideas_generated": ideas_generated,
+            "evaluation_complete": evaluation_complete,
+            "evaluated_ideas": evaluated_ideas,
+            "top_ideas": top_ideas
+        }
+    except Exception as e:
+        logger.error(f"Failed to get extraction status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # Prototype-specific endpoints
 @app.post("/prototype/run")
 async def run_prototype_pipeline(background_tasks: BackgroundTasks):

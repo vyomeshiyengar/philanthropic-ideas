@@ -8,6 +8,15 @@ This system analyzes data from multiple sources to identify:
 1. **Newly viable ideas** - Opportunities enabled by recent technological, scientific, cultural, or political shifts
 2. **Evergreen ideas** - Obvious but neglected opportunities that remain undone
 
+## 📋 Installation
+
+**For detailed installation instructions for Windows, Mac, and Linux, see [INSTALLATION_GUIDE.md](INSTALLATION_GUIDE.md)**
+
+### Quick Start:
+- **Windows**: `pip install -r requirements-windows.txt`
+- **Mac Python 3.12**: `pip install -r requirements-mac-py312.txt`
+- **Linux/Other**: `pip install -r requirements.txt`
+
 ## Target Outcomes & Metrics
 
 The system evaluates ideas across these key metrics:
