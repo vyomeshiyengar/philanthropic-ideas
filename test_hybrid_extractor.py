@@ -113,28 +113,28 @@ def test_hybrid_extractor_initialization():
     print("\n🔧 Testing Hybrid Extractor Initialization...")
     
     try:
-        # Check configuration
-        settings = Settings()
+    # Check configuration
+    settings = Settings()
         api_key_available = bool(settings.OPENAI_API_KEY)
         print(f"OpenAI API Key: {'✅ Set' if api_key_available else '❌ Not set'}")
-        
-        # Initialize hybrid extractor
-        hybrid_extractor = HybridIdeaExtractor()
-        
+    
+    # Initialize hybrid extractor
+    hybrid_extractor = HybridIdeaExtractor()
+    
         # Test basic properties
-        print(f"AI Client: {'✅ Available' if hybrid_extractor.ai_client else '❌ Not available'}")
-        print(f"Enhanced Keywords: {len(hybrid_extractor.enhanced_keywords)} domains")
-        
+    print(f"AI Client: {'✅ Available' if hybrid_extractor.ai_client else '❌ Not available'}")
+    print(f"Enhanced Keywords: {len(hybrid_extractor.enhanced_keywords)} domains")
+    
         # Test NLP initialization
         if hasattr(hybrid_extractor, 'nlp') and hybrid_extractor.nlp:
             print("✅ NLP pipeline initialized")
         else:
             print("❌ NLP pipeline not initialized")
-        
-        # Show enhanced keywords
-        print("\n🔑 Enhanced Keywords by Domain:")
-        for domain, keywords in hybrid_extractor.enhanced_keywords.items():
-            print(f"  {domain}: {len(keywords)} keywords")
+    
+    # Show enhanced keywords
+    print("\n🔑 Enhanced Keywords by Domain:")
+    for domain, keywords in hybrid_extractor.enhanced_keywords.items():
+        print(f"  {domain}: {len(keywords)} keywords")
             print(f"    Sample: {', '.join(keywords[:3])}...")
         
         return True

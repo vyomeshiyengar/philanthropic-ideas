@@ -10,7 +10,13 @@ from collections import defaultdict
 import openai
 from openai import OpenAI
 
-from analysis.idea_extractor import IdeaExtractor
+try:
+    from analysis.idea_extractor import IdeaExtractor
+    SPACY_AVAILABLE = True
+except ImportError as e:
+    print(f"spaCy not available: {e}")
+    SPACY_AVAILABLE = False
+    from analysis.idea_extractor_nltk_only import create_nltk_fallback
 from storage.database import db_manager
 from storage.models import RawData, ExtractedIdea
 from config.settings import settings
@@ -22,7 +28,13 @@ class HybridIdeaExtractor(IdeaExtractor):
     """Enhanced idea extractor that combines traditional NLP with AI synthesis."""
     
     def __init__(self, ai_provider: str = "openai"):
-        super().__init__()
+        if SPACY_AVAILABLE:
+            super().__init__()
+        else:
+            # Use NLTK fallback
+            self.nlp = create_nltk_fallback()
+            self.nlp_available = True
+        
         self.ai_provider = ai_provider
         
         # Model configuration for different tasks
